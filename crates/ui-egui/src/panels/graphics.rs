@@ -84,7 +84,11 @@ pub fn is_graphic_clip(app: &FilmcraftApp, c: ClipId) -> bool {
 /// The selected graphic clip, if any.
 pub fn selected_graphic(app: &FilmcraftApp) -> Option<(ClipId, TrackItem)> {
     let q = app.session.active_sequence()?;
-    app.session.state.selection.iter().copied().find(|c| is_graphic_clip(app, *c)).and_then(|c| q.find_item(c).map(|(_, it)| (c, it.clone())))
+    let selected = || app.session.state.selection.iter().copied().filter(|c| is_graphic_clip(app, *c));
+    selected()
+        .find(|c| q.find_item(*c).is_some_and(|(_, it)| it.range().contains(app.session.playhead())))
+        .or_else(|| selected().next())
+        .and_then(|c| q.find_item(c).map(|(_, it)| (c, it.clone())))
 }
 
 /// Layers of the graphic clips visible at the playhead, front-most first. A layer whose
@@ -180,6 +184,28 @@ struct DragState {
     clip: ClipId,
     layer: usize,
     start: Pos2,
+    origin: Option<(Vec2, Affine, [Pos2; 4])>,
+    duplicate: bool,
+    gesture: ClipId,
+    begun: bool,
+    last: Option<Vec2>,
+}
+
+impl DragState {
+    fn new(kind: DragKind, clip: ClipId, layer: usize, start: Pos2) -> Self {
+        Self { kind, clip, layer, start, origin: None, duplicate: false, gesture: clip, begun: false, last: None }
+    }
+}
+
+fn select_layer(app: &mut FilmcraftApp, clip: ClipId, layer: usize) {
+    if app.session.state.selection.contains(&clip) {
+        // A Program click must retain a timeline multi-selection for synchronized positioning.
+        app.session.state.graphic_layers = vec![layer];
+    } else {
+        if let Err(e) = app.session.execute("graphics.selectLayer", json!({"clip":clip.0,"layers":[layer]})) {
+            app.ui.status = e.to_string();
+        }
+    }
 }
 
 /// The eight handles of a layer's box `quad` (TL, TR, BR, BL): the corners (0–3), then the middles
@@ -644,7 +670,7 @@ pub fn monitor_overlay(app: &mut FilmcraftApp, ui: &mut egui::Ui, pic: Rect, fra
                     }
                     app.ui.gfx_edit = Some(ed);
                 }
-                drag = Some(DragState { kind: DragKind::TextSelect, clip: v.clip, layer: v.layer, start: p });
+                drag = Some(DragState::new(DragKind::TextSelect, v.clip, v.layer, p));
             }
         } else {
             match tool {
@@ -656,13 +682,13 @@ pub fn monitor_overlay(app: &mut FilmcraftApp, ui: &mut egui::Ui, pic: Rect, fra
                     let corner = selected()
                         .find_map(|v| corner_handles(v).and_then(|(_, pts)| pts.iter().position(|c| (*c - p).length() <= 6.0)).map(|n| (v.clip, v.layer, n)));
                     if let Some(v) = anchor {
-                        drag = Some(DragState { kind: DragKind::Anchor, clip: v.clip, layer: v.layer, start: p });
+                        drag = Some(DragState::new(DragKind::Anchor, v.clip, v.layer, p));
                     } else if let Some((c, l, n)) = handle {
-                        drag = Some(DragState { kind: DragKind::Handle(n), clip: c, layer: l, start: p });
+                        drag = Some(DragState::new(DragKind::Handle(n), c, l, p));
                     } else if let Some((c, l, n)) = corner {
-                        drag = Some(DragState { kind: DragKind::Corner(n), clip: c, layer: l, start: p });
+                        drag = Some(DragState::new(DragKind::Corner(n), c, l, p));
                     } else if tool == Tool::Type && !views.iter().any(|v| v.is_text() && v.hit(p)) {
-                        drag = Some(DragState { kind: DragKind::NewTextBox, clip: ClipId(0), layer: 0, start: p });
+                        drag = Some(DragState::new(DragKind::NewTextBox, ClipId(0), 0, p));
                     } else if tool == Tool::Selection
                         && let Some(v) = views.iter().find(|v| v.hit(p))
                     {
@@ -670,13 +696,16 @@ pub fn monitor_overlay(app: &mut FilmcraftApp, ui: &mut egui::Ui, pic: Rect, fra
                             end_edit(app, ui);
                         }
                         if !(Some(v.clip) == sel_clip && sel_layers.contains(&v.layer)) {
-                            actions.push(("graphics.selectLayer".into(), json!({"clip": v.clip.0, "layers": [v.layer]})));
+                            select_layer(app, v.clip, v.layer);
                         }
-                        drag = Some(DragState { kind: DragKind::Move, clip: v.clip, layer: v.layer, start: p });
+                        let mut d = DragState::new(DragKind::Move, v.clip, v.layer, p);
+                        d.origin = Some((v.spec.transform.position, v.canvas_to_screen, v.quad()));
+                        d.duplicate = v.is_text() && ui.input(|i| i.modifiers.alt);
+                        drag = Some(d);
                     }
                 }
                 Tool::Rectangle | Tool::Ellipse => {
-                    drag = Some(DragState { kind: DragKind::NewShape, clip: ClipId(0), layer: 0, start: p });
+                    drag = Some(DragState::new(DragKind::NewShape, ClipId(0), 0, p));
                 }
                 _ => {}
             }
@@ -690,23 +719,49 @@ pub fn monitor_overlay(app: &mut FilmcraftApp, ui: &mut egui::Ui, pic: Rect, fra
         });
     }
     // ---- drag feedback / commit
-    if let Some(d) = drag {
+    if let Some(mut d) = drag {
         let cur = resp.interact_pointer_pos().or(hover).unwrap_or(d.start);
         let v = views.iter().find(|v| v.clip == d.clip && v.layer == d.layer);
         // Snap in Program Monitor (hold ⌘/Ctrl to move freely)
         let snap_off = match (d.kind, v) {
             (DragKind::Move, Some(v)) if !ui.input(|i| i.modifiers.command) => {
-                crate::panels::monitor_view::snap_move(app, pic, frame, Rect::from_points(&v.quad()), cur - d.start)
+                let quad = d.origin.map_or_else(|| v.quad(), |(_, _, q)| q);
+                crate::panels::monitor_view::snap_move(app, pic, frame, Rect::from_points(&quad), cur - d.start)
             }
             _ => (cur - d.start, Vec::new()),
         };
         match d.kind {
             DragKind::Move => {
-                if let Some(v) = v {
+                if let Some(v) = v
+                    && let Some((initial, canvas, quad)) = d.origin
+                {
                     let off = snap_off.0;
-                    painter.add(egui::Shape::closed_line(v.quad().iter().map(|q| *q + off).collect(), Stroke::new(1.0, Color32::WHITE)));
+                    painter.add(egui::Shape::closed_line(quad.iter().map(|q| *q + off).collect(), Stroke::new(1.0, Color32::WHITE)));
                     crate::panels::monitor_view::draw_snap_lines(&painter, pic, &snap_off.1);
+                    let position = initial + unscale(&canvas, off);
+                    if (d.begun || (cur - d.start).length() > 2.0) && d.last != Some(position) {
+                        let texts = if v.is_text() && !d.duplicate { app.session.state.selection.clone() } else { Vec::new() };
+                        let params = json!({"clip":d.clip.0,"layer":d.layer,"position":[position.x,position.y],
+                            "texts":texts.iter().map(|c| c.0).collect::<Vec<_>>(), "duplicate":d.duplicate && !d.begun,
+                            "gesture":d.gesture.0,"merge":true,"begin":!d.begun});
+                        match app.session.execute("preview.move", params) {
+                            Ok(r) => {
+                                if d.duplicate
+                                    && !d.begun
+                                    && let Some(id) = r["clip"].as_u64()
+                                {
+                                    d.clip = ClipId(id);
+                                    d.layer = 0;
+                                }
+                                d.begun = true;
+                                d.last = Some(position);
+                            }
+                            Err(e) => app.ui.status = e.to_string(),
+                        }
+                        ui.ctx().request_repaint();
+                    }
                 }
+                ui.data_mut(|dd| dd.insert_temp(drag_id, d));
             }
             DragKind::Handle(n) => {
                 if let Some(v) = v {
@@ -760,18 +815,7 @@ pub fn monitor_overlay(app: &mut FilmcraftApp, ui: &mut egui::Ui, pic: Rect, fra
             ui.data_mut(|dd| dd.remove::<DragState>(drag_id));
             let moved = (cur - d.start).length() > 2.0;
             match d.kind {
-                DragKind::Move if moved => {
-                    if let Some(v) = v {
-                        let lin = Affine { e: 0.0, f: 0.0, ..v.canvas_to_screen };
-                        let off = snap_off.0;
-                        let delta = lin.inverse().map(|i| i.apply(Vec2::new(off.x as f64, off.y as f64))).unwrap_or_default();
-                        let p0 = v.spec.transform.position;
-                        actions.push((
-                            "graphics.set".into(),
-                            json!({"clip": v.clip.0, "layer": v.layer, "props": {"position": [p0.x + delta.x, p0.y + delta.y]}}),
-                        ));
-                    }
-                }
+                DragKind::Move => {}
                 DragKind::Handle(n) if moved => {
                     if let Some(v) = v {
                         let props = HandleDrag::new(v, n, d.start, cur, ui.input(|i| i.modifiers.shift)).props(v);
@@ -845,7 +889,7 @@ pub fn monitor_overlay(app: &mut FilmcraftApp, ui: &mut egui::Ui, pic: Rect, fra
                     if app.ui.gfx_edit.is_some() {
                         end_edit(app, ui);
                     }
-                    actions.push(("graphics.selectLayer".into(), json!({"clip": v.clip.0, "layers": [v.layer]})));
+                    select_layer(app, v.clip, v.layer);
                 } else {
                     deselect_on_monitor(app, ui);
                 }

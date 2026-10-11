@@ -169,3 +169,96 @@ fn graphics_and_masks_keep_their_input_priority_and_locked_tracks_have_no_handle
     let elements = d.call("ui.elements", json!({"prefix":format!("program.media.{clip}")}));
     assert!(elements.as_array().unwrap().is_empty());
 }
+
+#[test]
+fn option_drag_duplicates_both_video_and_still_above_the_original_in_one_undo() {
+    let mut d = Driver::demo();
+    let q = d.harness.state().session.active_sequence().unwrap();
+    assert_eq!((q.video_tracks.len(), q.audio_tracks.len()), (10, 10));
+    let movie = q.video_tracks[0].items[0].item.0;
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/fixtures/media-transform/option-still.png");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    image::RgbaImage::from_pixel(600, 400, image::Rgba([220, 160, 40, 255])).save(&path).unwrap();
+    let still = d.exec("file.import", json!({"paths":[path],"imageSequence":false}))["items"][0].as_u64().unwrap();
+    for item in [movie, still] {
+        let clip = d.add(item, [1150.0, 420.0], 50.0);
+        d.exec("timeline.select", json!({"clips":[clip]}));
+        let from = d.rect(&format!("program.media.{clip}")).center();
+        let before = d.harness.state().session.project.clone();
+        let n = d.harness.state().session.history.undo.len();
+        d.call("ui.drag", json!({"from":{"x":from.x,"y":from.y},"to":{"x":from.x-55.0,"y":from.y+35.0},"steps":6,"modifiers":{"alt":true,"command":true}}));
+        d.frames(12);
+        let s = &d.harness.state().session;
+        let copy = s.state.selection[0];
+        assert_ne!(copy, ClipId(clip));
+        let q = s.active_sequence().unwrap();
+        let (track, original) = q.find_item(ClipId(clip)).unwrap();
+        let index = q.video_tracks.iter().position(|tr| tr.id == track).unwrap();
+        let copied = q.find_item(copy).unwrap().1;
+        assert_eq!(q.video_tracks[index + 1].items[0].id, copy);
+        assert_eq!((copied.item, copied.start, copied.duration, copied.source_in), (original.item, original.start, original.duration, original.source_in));
+        assert_eq!(copied.effect("motion").unwrap().param("scale"), original.effect("motion").unwrap().param("scale"));
+        assert_ne!(copied.effect("motion").unwrap().param("position"), original.effect("motion").unwrap().param("position"));
+        assert_eq!(s.history.undo.len(), n + 1);
+        d.exec("edit.undo", json!({}));
+        assert_eq!(d.harness.state().session.project, before);
+    }
+}
+
+#[test]
+fn selected_nonconcurrent_texts_follow_live_and_option_drag_duplicates_only_the_grabbed_text() {
+    let mut d = Driver::demo();
+    let a = d.exec("graphics.newText", json!({"newClip":true,"text":"Visible title","position":[600,400],"size":80,"time":0,"seconds":3}))["clip"]
+        .as_u64()
+        .unwrap();
+    let b = d.exec(
+        "graphics.newText",
+        json!({"newClip":true,"text":"Later title","position":[950,650],"size":55,"seconds":3,"time":filmcraft_time::Tick::from_seconds_f64(5.0).0}),
+    )["clip"]
+        .as_u64()
+        .unwrap();
+    d.exec("timeline.select", json!({"clips":[b,a]}));
+    d.call("ui.set", json!({"tool":"Selection"}));
+    let from = d.rect(&format!("program.layer.{a}.0")).center();
+    d.call("ui.click", json!({"x":from.x,"y":from.y}));
+    assert_eq!(d.harness.state().session.state.selection.len(), 2);
+    let before = d.harness.state().session.project.clone();
+    let n = d.harness.state().session.history.undo.len();
+    let m = egui::Modifiers { command: true, ..Default::default() };
+    let to = from + egui::vec2(70.0, 45.0);
+    d.harness.input_mut().events.push(egui::Event::ModifiersChanged(m));
+    d.harness
+        .input_mut()
+        .events
+        .extend([egui::Event::PointerMoved(from), egui::Event::PointerButton { pos: from, button: egui::PointerButton::Primary, pressed: true, modifiers: m }]);
+    d.frames(1);
+    d.harness.input_mut().events.push(egui::Event::PointerMoved(to));
+    d.frames(3);
+    let pa = d.exec("graphics.list", json!({"clip":a}))["layers"][0]["position"].clone();
+    let pb = d.exec("graphics.list", json!({"clip":b}))["layers"][0]["position"].clone();
+    assert_ne!(pa, json!([600.0, 400.0]));
+    assert_eq!(pa, pb, "all selected text positions update before releasing the mouse");
+    d.harness.input_mut().events.push(egui::Event::PointerButton { pos: to, button: egui::PointerButton::Primary, pressed: false, modifiers: m });
+    d.frames(3);
+    assert_eq!(d.harness.state().session.history.undo.len(), n + 1);
+    assert_eq!(d.harness.state().session.state.selection.len(), 2);
+    d.exec("edit.undo", json!({}));
+    assert_eq!(d.harness.state().session.project, before);
+    d.exec("timeline.select", json!({"clips":[a,b]}));
+    let from = d.rect(&format!("program.layer.{a}.0")).center();
+    let n = d.harness.state().session.history.undo.len();
+    d.call("ui.drag", json!({"from":{"x":from.x,"y":from.y},"to":{"x":from.x+60.0,"y":from.y+40.0},"steps":6,"modifiers":{"alt":true,"command":true}}));
+    d.frames(12);
+    let copy = d.harness.state().session.state.selection[0].0;
+    assert!(copy != a && copy != b);
+    let original = d.exec("graphics.list", json!({"clip":a}));
+    let copied = d.exec("graphics.list", json!({"clip":copy}));
+    assert_eq!(copied["start"], original["start"]);
+    assert_eq!(copied["duration"], original["duration"]);
+    assert_eq!(copied["layers"][0]["text"], original["layers"][0]["text"]);
+    assert_eq!(copied["layers"][0]["scale"], original["layers"][0]["scale"]);
+    assert_eq!(original["layers"][0]["position"], json!([600.0, 400.0]));
+    assert_eq!(d.harness.state().session.history.undo.len(), n + 1);
+    d.exec("edit.undo", json!({}));
+    assert_eq!(d.harness.state().session.project, before);
+}

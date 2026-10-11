@@ -37,3 +37,20 @@ control session using synthetic media verified video dragging, still-image corne
 resizing with the opposite corner fixed, one history entry per gesture, undo/redo
 and saving a project. The Program screenshot was visually inspected. Test files
 are under the local workspace's `verification/transform-native/`, outside Git.
+
+## Option drag, synchronized text and minimum tracks
+
+Verified on 2026-10-11 with the personal targeted workflow. Formatting and Clippy
+for engine/UI passed. Twelve relevant tests passed: three new engine regressions,
+six media-transform UI tests (including two new acceptance tests), and three
+existing graphics UI regressions. The full workspace suite was not repeated.
+Tests cover preserved timing/style/originals, one-step duplicate-and-move Undo,
+live synchronization of nonconcurrent selected titles, hostile command input,
+locked tracks, minimum-track idempotence and the existing resize/mask behavior.
+
+One desktop/CLI release build completed. A disposable native control session
+verified Option-drag duplication of text/video/still, synchronized titles,
+Undo/Redo, save/reopen, and opening the prior three-track synthetic project with
+at least ten video/audio tracks. The Program screenshot was visually inspected.
+Local proof files are in `verification/preview-native/`, outside Git. No original
+user projects were modified during verification.

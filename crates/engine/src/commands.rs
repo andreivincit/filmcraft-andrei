@@ -2596,6 +2596,16 @@ fn build() -> Vec<CommandSpec> {
             Ok(Value::Null)
         }),
         cmd!(
+            "preview.move",
+            "Move or Duplicate Preview Element",
+            [],
+            None,
+            r#"{"clip":id,"layer":n?,"position":[x,y],"duplicate":bool?,"texts":[clipId]?,"time":ticks?,"gesture":id?,"merge":bool?,"begin":bool?}"#,
+            has_seq,
+            crate::preview::move_clip
+        ),
+        cmd!("preview.ensureTracks", "Prepare Ten Video and Audio Tracks", [], None, "{}", always, crate::preview::ensure_tracks),
+        cmd!(
             "motion.set",
             "Transform Clip",
             [],

@@ -480,6 +480,9 @@ impl FilmcraftApp {
 
 impl FilmcraftApp {
     pub fn new(mut session: Session) -> Self {
+        if let Err(e) = session.execute("preview.ensureTracks", json!({})) {
+            session.toast(e.to_string());
+        }
         session.shortcuts.register_external(menus::external_commands());
         let recovery = !session.recovery_candidates().is_empty();
         let frames = Arc::new(FrameServer::new(session.media.clone(), session.services.clone(), session.previews.clone(), FrameServer::default_workers()));
@@ -1600,6 +1603,9 @@ impl FilmcraftApp {
         for ev in self.session.drain_events() {
             match ev {
                 filmcraft_engine::Event::OpenSequence(_) => {
+                    if let Err(e) = self.session.execute("preview.ensureTracks", json!({})) {
+                        self.ui.status = e.to_string();
+                    }
                     // show the sequence with its own view (or fitted, the first time)
                     self.timeline_view_of = None;
                     self.ui.dock.restore_timeline();

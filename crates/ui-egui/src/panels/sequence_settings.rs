@@ -77,8 +77,8 @@ pub fn open(app: &mut FilmcraftApp) {
         tab: "general".into(),
         name,
         new_sequence: false,
-        video_tracks: 3,
-        audio_tracks: 3,
+        video_tracks: q.video_tracks.len() as u32,
+        audio_tracks: q.audio_tracks.len() as u32,
         fps_num: st.frame_rate.num,
         fps_den: st.frame_rate.den,
         width: st.width,
@@ -96,15 +96,15 @@ pub fn open(app: &mut FilmcraftApp) {
 }
 
 /// File ▸ New ▸ Sequence…: the dialog as New Sequence, from the default settings, named like
-/// `file.newSequence` would name it, with three video and three audio tracks.
+/// `file.newSequence` would name it, with ten video and ten audio tracks.
 pub fn open_new(app: &mut FilmcraftApp) {
     let st = SequenceSettings::default();
     let n = app.session.project.sequences().count() + 1;
     app.ui.sequence_settings = SequenceSettingsDraft {
         tab: "general".into(),
         new_sequence: true,
-        video_tracks: 3,
-        audio_tracks: 3,
+        video_tracks: 10,
+        audio_tracks: 10,
         fps_num: st.frame_rate.num,
         fps_den: st.frame_rate.den,
         width: st.width,

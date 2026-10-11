@@ -21,6 +21,30 @@ This adds intrinsic Motion controls; rotation, anchor editing and separate Trans
 handles are still controlled through the panels. Automation uses `motion.set`,
 `program.media.<clip>` and `program.media.<clip>.handle.<0..3>`.
 
+Hold Option before dragging a text, image or video body in Program to duplicate it.
+The copy goes on a new video track immediately above the original, at the same
+timeline start and duration, retaining size, style and effects. Only its preview
+position changes. When a graphic clip contains several internal layers, only the
+grabbed text layer is copied. Media files are referenced, not copied. A gesture
+is one Undo, including creation of the duplicate. Option on a resize handle still
+resizes; use the element's body for duplication, with playback paused and Selection active.
+
+Select several text clips in the timeline, including titles at different times.
+Clicking an already-selected title in Program retains that selection. Drag the
+visible title and all unlocked selected text clips take its new position live,
+without changing their text, style or timing. This assigns the same frame position;
+it does not preserve different offsets. Images/videos in a mixed selection are
+not repositioned. Locked tracks are skipped, and animated positions follow the
+existing edit-at-playhead behavior (inactive clips clamp to their own time range).
+
+The desktop editor prepares at least ten video and ten audio tracks in every
+sequence when opening a project or sequence, including the demo and recovered
+projects. It preserves all existing tracks, settings and clips; empty new tracks
+are appended and become part of the project on save. Projects with more tracks
+retain them. New Sequence starts with ten of each. Tracks can require scrolling
+in the timeline; all twenty need not fit on screen at once. Automation commands:
+`preview.move` and `preview.ensureTracks`.
+
 The official `/Applications/FilmCraft.app` continues to receive ArtCraft Launcher updates.
 Our app is `../Applications/FilmCraft Andrei.app`, with a different bundle identifier and
 settings, logs, autosaves and recovery in `../local-data`. Media and `.fcproj` projects can

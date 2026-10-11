@@ -134,6 +134,8 @@ struct Drag {
     time: Tick,
     begun: bool,
     last: Option<(Vec2, f64, f64)>,
+    duplicate: bool,
+    gesture: ClipId,
 }
 
 impl Drag {
@@ -202,7 +204,16 @@ pub(crate) fn monitor_overlay(
             let target = handle.or_else(|| hit(app, &views, graphics, start).map(|v| (v, None)));
             if let Some((v, corner)) = target {
                 select(app, ui, v.clip);
-                drag = Some(Drag { view: v.clone(), start, corner, time: app.session.playhead(), begun: false, last: None });
+                drag = Some(Drag {
+                    view: v.clone(),
+                    start,
+                    corner,
+                    time: app.session.playhead(),
+                    begun: false,
+                    last: None,
+                    duplicate: corner.is_none() && ui.input(|i| i.modifiers.alt),
+                    gesture: v.clip,
+                });
             }
         }
     }
@@ -227,12 +238,28 @@ pub(crate) fn monitor_overlay(
                         params["scale"] = json!(scale);
                         params["scaleWidth"] = json!(scale_width);
                     }
-                    if let Err(e) = app.session.execute("motion.set", params) {
-                        app.ui.status = e.to_string();
-                        drag = None;
+                    let command = if d.corner.is_none() {
+                        params["duplicate"] = json!(d.duplicate && !d.begun);
+                        params["gesture"] = json!(d.gesture.0);
+                        "preview.move"
                     } else {
-                        d.begun = true;
-                        d.last = Some((position, scale, scale_width));
+                        "motion.set"
+                    };
+                    match app.session.execute(command, params) {
+                        Err(e) => {
+                            app.ui.status = e.to_string();
+                            drag = None;
+                        }
+                        Ok(result) => {
+                            if d.duplicate
+                                && !d.begun
+                                && let Some(id) = result["clip"].as_u64()
+                            {
+                                d.view.clip = ClipId(id);
+                            }
+                            d.begun = true;
+                            d.last = Some((position, scale, scale_width));
+                        }
                     }
                     ui.ctx().request_repaint();
                 }
