@@ -2,7 +2,24 @@
 
 Personal macOS build based on FilmCraft 0.6.0, upstream commit
 `2ff3f5e266838700c292a35aaf762e3d4dcef980`. This branch changes identification and local
-packaging only. Editing features remain those of the upstream release.
+packaging, plus the personal features documented below.
+
+## Preview transforms
+
+Pause playback and use the Selection tool (V). Click a visible video or still in the
+Program monitor, or select its clip in the timeline. A blue outline and four corner handles
+appear. Drag inside it to move the clip; drag a corner to resize with its proportions preserved
+and the opposite corner fixed. The picture follows the gesture, and one Undo restores the
+entire move or resize. Position and Scale in the Properties panel reflect the same values.
+
+The frontmost clip under the pointer wins. To reach the corner handles of an overlapping clip
+behind it, select that clip in the timeline first. Text/shape and mask controls retain priority.
+Locked tracks cannot be manipulated. Motion keyframes are edited at the current playhead.
+If Motion has been disabled in the panel, enable it there before dragging its handles.
+Snapping uses the existing Program guides/frame edges; hold Cmd to move freely.
+This adds intrinsic Motion controls; rotation, anchor editing and separate Transform-effect
+handles are still controlled through the panels. Automation uses `motion.set`,
+`program.media.<clip>` and `program.media.<clip>.handle.<0..3>`.
 
 The official `/Applications/FilmCraft.app` continues to receive ArtCraft Launcher updates.
 Our app is `../Applications/FilmCraft Andrei.app`, with a different bundle identifier and

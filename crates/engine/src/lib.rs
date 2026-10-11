@@ -29,6 +29,7 @@ pub mod media_browser;
 pub mod media_pool;
 pub mod media_watch;
 pub mod mixer;
+pub mod motion;
 pub mod multicam;
 pub mod narration;
 pub mod panels;

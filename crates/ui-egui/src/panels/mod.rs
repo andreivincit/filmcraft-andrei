@@ -21,6 +21,7 @@ pub mod lumetri;
 pub mod masks;
 pub mod media_browser;
 pub mod media_dialogs;
+pub mod media_transform;
 pub mod menu_dialogs;
 pub mod metadata;
 pub mod meters;

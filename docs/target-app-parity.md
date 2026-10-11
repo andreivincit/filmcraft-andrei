@@ -1,8 +1,12 @@
 # Parity with Adobe Premiere Pro
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** major (full re-measure against Premiere Pro 2026 26.5.2; replaces the scorecard and estimate that lived in ROADMAP.md) · **Target:** Adobe Premiere Pro 2026 (26.5.2, macOS)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** major (full re-measure against Premiere Pro 2026 26.5.2; replaces the scorecard and estimate that lived in ROADMAP.md) · **Target:** Adobe Premiere Pro 2026 (26.5.2, macOS)
 
 The authoritative assessment of how close FilmCraft is to Premiere Pro, and how much work is left.
+
+Personal fork note (2026-10-11): media Motion can now be moved and corner-resized directly in
+Program ([G8 update](gaps.md#g8-ui-fidelity-monitor-handles-effect-controls-docking)). The numerical
+assessment below remains the upstream 2026-10-10 baseline; no unmeasured percentage increase is claimed.
 [ROADMAP.md](../ROADMAP.md) summarizes it; [gaps.md](gaps.md) lists every shortfall one at a time.
 The deep checklists are [file-format-parity.md](file-format-parity.md),
 [codec-parity.md](codec-parity.md), [hardware-parity.md](hardware-parity.md),
@@ -352,6 +356,7 @@ control surfaces), and validation in Avid Media Composer / Pro Tools.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | minor | Personal fork: intrinsic Motion body dragging and proportional corner handles; upstream stage, scores and broader estimates retained |
 | 2026-10-10 | minor | Readiness table: hours to ~95% for each audience (full ~1,450–2,600, mainstream ~500–850, essentials ~180–350); full number confirmed as an additive weighted sum (no change) |
 | 2026-10-10 | minor | Added the three readiness numbers: full ready-for-real-work formula written out (~55% -> ~56%, same inputs, now computed rather than rounded down), mainstream practitioner ~55% and essentials user ~60% with written weights and discounts, and counted user evidence (31 people praising, 0 switch reports, ~64 core-path vs ~29 niche open bugs) |
 | 2026-10-10 | minor | Stage checked against the new core-workflow gate (docs/roadmap.md#alpha-gate): passes, stays alpha |

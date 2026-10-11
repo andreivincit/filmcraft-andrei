@@ -22,3 +22,18 @@ craft-fonts `3d9ab3a132ed0eff457e424226a435a901da30d3`.
 These checks establish the editable baseline and automation connection. They do not
 add new editing features or establish compatibility with every real media/project file.
 Synthetic outputs and personal material remain outside this public source checkout.
+
+## Program preview media transforms
+
+Verified on 2026-10-11 after adding image/video selection, body dragging and
+proportional corner resizing. `bash andrei/check.sh` passed formatting, Clippy,
+all workspace tests (2,778 passed, zero failed, 41 upstream ignored across 246
+groups), dependency layers, 61 asset attributions and 44 WebAssembly crates.
+Seven new tests cover atomic motion edits, validation, animated parameters,
+image/video gestures, rotated nonuniform media and graphics/mask/lock priority.
+
+The native desktop and CLI product release builds succeeded. A disposable native
+control session using synthetic media verified video dragging, still-image corner
+resizing with the opposite corner fixed, one history entry per gesture, undo/redo
+and saving a project. The Program screenshot was visually inspected. Test files
+are under the local workspace's `verification/transform-native/`, outside Git.

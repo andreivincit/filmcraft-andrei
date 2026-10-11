@@ -3,6 +3,21 @@
 The egui frontend draws panels and dialogs, and dispatches project changes through the engine.
 Interactive controls keep stable automation ids regardless of the interface language.
 
+## Program media transforms (personal fork)
+
+Selection-tool clicks pick video/still/subclip/nested-sequence clips in visible track order.
+Selected clips show their source bounds transformed by the renderer's Motion matrix, including
+rotation, pixel aspect ratio and Scale to Frame Size. Body drags change Position live; corner
+drags preserve the existing aspect and pin the opposite corner. Each gesture dispatches merged
+atomic `motion.set` edits, so one Undo restores Position and both scale axes. Animated parameters
+are changed at source time derived from the captured playhead; body drags do not insert Scale keys.
+
+Graphics and masks keep their existing controls. Handles are disabled during playback and on
+locked tracks or with Motion disabled. Automation IDs are `program.media.<clip>` and `.handle.<0..3>` (TL/TR/BR/BL).
+`media_transform_ui` covers imported PNGs, video overlays, rotated/nonuniform scale, stacking,
+mask priority, locked tracks, undo/redo and base-clip isolation. Rotation/anchor handles and the
+separate Transform effect are outside this change. No project-format or render/export change.
+
 ## Transition drop previews
 
 Dragging a video or audio transition over a compatible clip shows its actual time span, the

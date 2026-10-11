@@ -1,8 +1,12 @@
 # FilmCraft Roadmap
 
+Personal fork progress (2026-10-11): Program-monitor media move/resize controls added;
+see [usage](andrei/README.md#preview-transforms) and the [partial G8 update](docs/gaps.md#g8-ui-fidelity-monitor-handles-effect-controls-docking).
+Upstream stage and estimates below are retained.
+
 **Stage: alpha** · next: beta, ~19 points of ready-for-real-work and ~400–700 h away, plus opening Premiere's `.prproj` ([why](docs/target-app-parity.md#stage); passes the [core-workflow gate](docs/roadmap.md#alpha-gate))
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** major (full re-measure against Premiere Pro 2026 26.5.2; scorecard, gaps, milestones and localization moved into docs/ per the craftrules progress-docs standard) · **Target:** Adobe Premiere Pro 2026 (26.5.2)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** major (full re-measure against Premiere Pro 2026 26.5.2; scorecard, gaps, milestones and localization moved into docs/ per the craftrules progress-docs standard) · **Target:** Adobe Premiere Pro 2026 (26.5.2)
 
 Progress toward parity with Adobe Premiere Pro. This page is the summary; the detail is in
 [docs/target-app-parity.md](docs/target-app-parity.md) (assessment, methodology, calibration),
@@ -161,6 +165,7 @@ Ranked; detail and "done when" in [docs/roadmap.md](docs/roadmap.md) and [docs/g
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | minor | Personal fork: intrinsic Motion body dragging and proportional corner handles; upstream stage, scores and broader estimates retained |
 | 2026-10-10 | minor | Readiness-by-audience table with hours to ~95% per audience |
 | 2026-10-10 | minor | Headline adds mainstream practitioner (~55%) and essentials user (~60%); ready for real work ~55% -> ~56% (formula written out, same inputs); beta distance ~19 points |
 | 2026-10-10 | minor | Stage banner links the core-workflow gate (all six workflows pass on macOS; stays alpha) |

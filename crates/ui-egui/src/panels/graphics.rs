@@ -54,7 +54,7 @@ impl LayerView {
         let v = self.to_screen.inverse()?.apply(Vec2::new(p.x as f64, p.y as f64));
         Some((v.x as f32, v.y as f32))
     }
-    fn hit(&self, p: Pos2) -> bool {
+    pub(crate) fn hit(&self, p: Pos2) -> bool {
         let pad = 4.0 / screen_scale(&self.to_screen).max(1e-6);
         self.to_local(p).is_some_and(|(x, y)| x >= self.local[0] - pad && x <= self.local[2] + pad && y >= self.local[1] - pad && y <= self.local[3] + pad)
     }
@@ -608,6 +608,11 @@ pub fn monitor_overlay(app: &mut FilmcraftApp, ui: &mut egui::Ui, pic: Rect, fra
             }
             _ => {}
         }
+    }
+
+    // Media and graphics share this response, so only one overlay owns a gesture.
+    if crate::panels::media_transform::monitor_overlay(app, ui, pic, frame, &resp, &views, drag.is_none()) {
+        return;
     }
 
     // ---- text editing

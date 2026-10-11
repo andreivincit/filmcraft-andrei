@@ -2596,6 +2596,15 @@ fn build() -> Vec<CommandSpec> {
             Ok(Value::Null)
         }),
         cmd!(
+            "motion.set",
+            "Transform Clip",
+            [],
+            None,
+            r#"{"clip":id,"position":[x,y]?,"scale":0..10000?,"scaleWidth":0..10000?,"time":ticks?,"merge":bool?,"begin":bool?} (atomic Motion edit; animated values are changed at the requested timeline time)"#,
+            has_seq,
+            crate::motion::set
+        ),
+        cmd!(
             "effects.setParam",
             "Set Effect Parameter",
             [],
