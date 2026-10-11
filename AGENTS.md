@@ -118,6 +118,15 @@ reproduce an image (for example, point lists traced from someone else's icon).
 
 ## 3. Engineering rules
 
+### Personal `andrei` branch
+
+For this fork, follow [`andrei/WORKFLOW.md`](andrei/WORKFLOW.md). At the owner's
+explicit request on 2026-10-11, targeted checks replace full workspace CI before
+routine commits; workflow/documentation-only edits require no application build.
+This overrides only the full-CI-per-commit requirement below and in `CLAUDE.md`.
+All other safety and licensing rules remain in force. Full gates still apply to
+upstream updates and changes with broad or unbounded impact.
+
 ### 3.1 Never crash
 
 See [§0](#0-never-crash). It outranks every other engineering rule.

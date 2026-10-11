@@ -35,7 +35,12 @@ to 1.99.0, and fonts to commit `3d9ab3a132ed0eff457e424226a435a901da30d3`.
 `bash andrei/build.sh` builds the desktop app and CLI and verifies the local app signature.
 Packaging keeps one preceding application as `FilmCraft Andrei.previous.app`; it replaces
 older generated application backups instead of accumulating copies. User data stays outside it.
-`bash andrei/check.sh` runs upstream quality gates. The source checkout contains no
+Routine edits follow [`WORKFLOW.md`](WORKFLOW.md): targeted tests, one final build
+and one short native check. Use `bash andrei/check.sh --targeted filmcraft-CRATE TEST_ARGS...`
+for focused checks. `bash andrei/check.sh --full` (or no arguments) runs upstream
+quality gates for broad changes. `bash andrei/build.sh --no-package` builds once;
+`bash andrei/build.sh --package-only` packages those binaries after the commit.
+The source checkout contains no
 personal footage, projects, settings, tokens or extracted commercial LUTs.
 Checks retain release optimization but disable repeated LTO and use 16 codegen units
 for the many test executables. Product builds retain the upstream thin-LTO profile.
