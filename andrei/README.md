@@ -1,0 +1,45 @@
+# FilmCraft Andrei
+
+Personal macOS build based on FilmCraft 0.6.0, upstream commit
+`2ff3f5e266838700c292a35aaf762e3d4dcef980`. This branch changes identification and local
+packaging only. Editing features remain those of the upstream release.
+
+The official `/Applications/FilmCraft.app` continues to receive ArtCraft Launcher updates.
+Our app is `../Applications/FilmCraft Andrei.app`, with a different bundle identifier and
+settings, logs, autosaves and recovery in `../local-data`. Media and `.fcproj` projects can
+be opened through File > Open without copying their media. Preserve a project backup before
+opening it in a future release that might migrate its format.
+
+## Build
+
+The local Rust toolchain is in `../.tools`; upstream fonts are in `../craft-fonts`.
+For a fresh checkout on Apple silicon, run `bash andrei/bootstrap.sh` first. Rust is pinned
+to 1.99.0, and fonts to commit `3d9ab3a132ed0eff457e424226a435a901da30d3`.
+`bash andrei/build.sh` builds the desktop app and CLI and verifies the local app signature.
+Packaging keeps one preceding application as `FilmCraft Andrei.previous.app`; it replaces
+older generated application backups instead of accumulating copies. User data stays outside it.
+`bash andrei/check.sh` runs upstream quality gates. The source checkout contains no
+personal footage, projects, settings, tokens or extracted commercial LUTs.
+Checks retain release optimization but disable repeated LTO and use 16 codegen units
+for the many test executables. Product builds retain the upstream thin-LTO profile.
+
+## Updates
+
+`upstream` points at `https://github.com/storytold/filmcraft.git` and `origin` at this fork.
+The `andrei` branch starts at the installed 0.6.0 release; `main` tracks the upstream baseline.
+Choose an upstream release, run `bash andrei/update.sh vX.Y.Z`, review/resolve the merge,
+run checks, commit, rebuild and smoke-test before pushing. A conflict stops the merge;
+personal commits are never reset or overwritten. Launcher updates do not update this build.
+
+`target` is the regenerable build cache. Keeping it accelerates later changes. No media is
+stored there except synthetic test fixtures. Toolchains and dependencies are in `../.tools`.
+
+## Agent access
+
+For a session that needs automation, launch the app executable with `--control 9876`.
+`bash andrei/agent.sh` does this after the normal instance has been saved and closed.
+The server listens on loopback only. The bundled `filmcraft-cli` can then use
+`--bridge 127.0.0.1:9876`, including `mcp --bridge 127.0.0.1:9876`.
+Normal launches keep the control server off. No global Codex settings are changed by this setup.
+Keep the app inside this workspace: its launcher resolves `local-data` relative to the bundle.
+Use a Finder alias or a Dock shortcut if you want easier access; do not move the bundle alone.
