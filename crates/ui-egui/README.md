@@ -45,6 +45,10 @@ paragraph middle handles resize the wrapping box. Timeline text selections synch
 style and geometry from the visible title, retaining each clip's wording. Double-click
 to edit and single-click beside a letter to place the caret there.
 
+Text Appearance also includes Glow: enable, colour, Intensity, Range and X/Y offsets.
+These use the same `graphics.set` bulk/Undo path as typography; the numeric drag is
+one edit and the halo remains independent of Shadow.
+
 ## Localisation
 
 Edit > Language offers English, Japanese, Spanish, Brazilian Portuguese, Ukrainian, Simplified

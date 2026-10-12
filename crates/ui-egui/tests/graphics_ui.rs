@@ -85,6 +85,36 @@ impl Driver {
 }
 
 #[test]
+fn glow_controls_apply_to_timeline_titles_and_drag_is_one_undo() {
+    let mut d = Driver::demo();
+    d.ok("ui.set", json!({"workspace":"Captions and Graphics"}));
+    let a = d.exec("graphics.newText", json!({"text":"Glow here"}))["clip"].as_u64().unwrap();
+    d.exec("graphics.set", json!({"clip":a,"props":{"shadow":true}}));
+    let b = d.exec("graphics.newText", json!({"text":"Later title","time":filmcraft_time::Tick::from_seconds_f64(20.0).0}))["clip"].as_u64().unwrap();
+    d.exec("timeline.select", json!({"clips":[a,b]}));
+    d.harness.state_mut().ui.collapsed_fx.extend(["gfx:Responsive Design - Position".into(), "gfx:Align and Transform".into(), "gfx:Text".into()]);
+    d.frames(4);
+    d.ok("ui.click", json!({"id":"graphics.prop.glow"}));
+    d.frames(3);
+    for clip in [a, b] {
+        assert_eq!(text_param(&mut d, clip, "glow"), Some(filmcraft_project::ParamValue::Bool(true)));
+    }
+    let n = d.exec("history.list", json!({}))["undo"].as_array().unwrap().len();
+    let r = d.rect("graphics.prop.glow_range");
+    let (x, y) = (r[0] + r[2] / 2.0, r[1] + r[3] / 2.0);
+    d.ok("ui.drag", json!({"from":{"x":x,"y":y},"to":{"x":x+30.0,"y":y},"steps":6}));
+    d.frames(4);
+    let size = text_param(&mut d, a, "glow_range");
+    assert_ne!(size, Some(filmcraft_project::ParamValue::Float(45.0)));
+    assert_eq!(size, text_param(&mut d, b, "glow_range"));
+    assert_eq!(d.exec("history.list", json!({}))["undo"].as_array().unwrap().len(), n + 1);
+    d.exec("edit.undo", json!({}));
+    assert_eq!(text_param(&mut d, a, "glow_range"), Some(filmcraft_project::ParamValue::Float(45.0)));
+    assert_eq!(text_param(&mut d, b, "shadow"), Some(filmcraft_project::ParamValue::Bool(false)));
+    assert_eq!(d.exec("graphics.list", json!({"clip":b}))["layers"][0]["text"], "Later title");
+}
+
+#[test]
 fn visual_text_click_places_unicode_caret_and_retains_timeline_selection() {
     let mut d = Driver::demo_with_step_dt(Some(1.0 / 60.0));
     d.ok("ui.set", json!({"workspace":"Captions and Graphics","tool":"Selection"}));

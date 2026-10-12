@@ -41,7 +41,8 @@ fn timeline_text_selection_synchronizes_style_and_box_with_atomic_undo() {
     let undo = s.history.undo.len();
     s.execute(
         "graphics.set",
-        json!({"props":{"size":72,"font":"Inter","font_style":"Bold","position":[200,350],"box_width":500,"box_height":180,"anchor":[-40,0]}}),
+        json!({"props":{"size":72,"font":"Inter","font_style":"Bold","position":[200,350],"box_width":500,"box_height":180,"anchor":[-40,0],
+            "glow":true,"glow_color":"#ffcc00","glow_intensity":60,"glow_range":25,"glow_offset_x":12,"glow_offset_y":-8}}),
     )
     .unwrap();
     for clip in [a, b] {
@@ -50,10 +51,14 @@ fn timeline_text_selection_synchronizes_style_and_box_with_atomic_undo() {
         assert_eq!((t.size, t.style.as_str(), t.font.as_str(), t.box_width, t.box_height), (72.0, "Bold", "Inter", 500.0, 180.0));
         assert_eq!(spec.transform.position, filmcraft_geom::Vec2::new(200.0, 350.0));
         assert_eq!(spec.transform.anchor, filmcraft_geom::Vec2::new(-40.0, 0.0));
+        let g = spec.appearance.glow.as_ref().unwrap();
+        assert_eq!((g.intensity, g.range, g.offset), (0.6, 25.0, (12.0, -8.0)));
+        assert_eq!(g.color, [1.0, 0.8, 0.0, 1.0]);
     }
     assert_eq!(text_of(&layers(&s, a)[0]), "Primul text");
     assert_eq!(text_of(&layers(&s, b)[0]), "Alt text");
     assert_ne!(layers(&s, locked)[0].transform.position, layers(&s, a)[0].transform.position);
+    assert!(layers(&s, locked)[0].appearance.glow.is_none());
     assert_eq!(s.history.undo.len(), undo + 1);
     let after = s.project.clone();
     s.execute("edit.undo", json!({})).unwrap();

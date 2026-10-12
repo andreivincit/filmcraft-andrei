@@ -144,6 +144,29 @@ Verified with 21 graphics-engine and 17 focused UI tests, formatting/Clippy, one
 final product build, and a native gesture/style/caret/Undo/save-reopen probe with
 a representative screenshot in `../verification/text-edit-native/`.
 
+## Text glow
+
+Select a text clip, then open **Essential Graphics → Edit → Appearance → Glow**
+(also available in **Properties**). Enable the checkbox and choose a halo colour,
+Intensity (0–100%), Range (0–100 px), X-offset and Y-offset (±500 px).
+The soft halo follows the letters and leaves their fill sharp; Shadow is independent.
+Range and offsets follow the text's scale and rotation. The controls start at 40%
+intensity, 45 px range and zero offsets, based on Andrei's CapCut screenshot;
+this implements the soft halo rather than CapCut's commercial ray preset.
+
+Selecting multiple text clips applies Glow edits to all selected text layers from
+the visible title, including titles at other times, with one Undo per edit or drag.
+Wording remains local. Existing and generated Graphic text clips support the effect;
+old projects keep Glow off. Colour and numeric properties can be animated and survive
+save/reopen. Preview and export share the rendering.
+Automation: `graphics.set` with `glow`, `glow_color`, `glow_intensity`, `glow_range`,
+`glow_offset_x`, `glow_offset_y`; UI ids are `graphics.prop.<parameter>`.
+Verified with the model compatibility/animation test, two halo rendering tests,
+the bulk-style engine test, five adjacent UI tests and formatting/Clippy for affected
+crates, one final product build and a 12-second disposable native probe (checkbox,
+bulk drag, Undo/Redo, persistence and identical reopened frame export).
+Screenshot and exported frame proof: `../verification/text-glow-native/`.
+
 ## Build
 
 The local Rust toolchain is in `../.tools`; upstream fonts are in `../craft-fonts`.
