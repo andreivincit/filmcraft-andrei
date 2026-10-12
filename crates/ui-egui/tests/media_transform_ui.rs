@@ -262,3 +262,60 @@ fn selected_nonconcurrent_texts_follow_live_and_option_drag_duplicates_only_the_
     d.exec("edit.undo", json!({}));
     assert_eq!(d.harness.state().session.project, before);
 }
+
+#[test]
+fn shift_click_selects_internal_and_separate_titles_and_group_drag_preserves_spacing() {
+    let mut d = Driver::demo();
+    let a = d.exec("graphics.newText", json!({"text":"Title A","position":[550,300],"time":0,"size":65}))["clip"].as_u64().unwrap();
+    d.exec("graphics.newText", json!({"clip":a,"text":"Title B","position":[550,550],"size":65}));
+    let b = d.exec("graphics.newText", json!({"text":"Title C","position":[850,750],"time":0,"size":65}))["clip"].as_u64().unwrap();
+    for (index, (clip, layer)) in [(a, 0), (a, 1), (b, 0)].into_iter().enumerate() {
+        let center = d.rect(&format!("program.layer.{clip}.{layer}")).center();
+        d.call("ui.click", json!({"x":center.x,"y":center.y,"count":if index>0 {2} else {1},"modifiers":{"shift":index>0}}));
+    }
+    assert_eq!(d.harness.state().session.state.preview_elements.len(), 3);
+    let before = d.harness.state().session.project.clone();
+    let origins: Vec<_> = [(a, 0), (a, 1), (b, 0)].into_iter().map(|(c, l)| d.rect(&format!("program.layer.{c}.{l}")).center()).collect();
+    let n = d.harness.state().session.history.undo.len();
+    let offset = egui::vec2(55.0, 35.0);
+    d.drag(origins[0], origins[0] + offset);
+    for (index, (c, l)) in [(a, 0), (a, 1), (b, 0)].into_iter().enumerate() {
+        let after = d.rect(&format!("program.layer.{c}.{l}")).center();
+        assert!((after - origins[index] - offset).length() < 1.5);
+    }
+    assert_eq!(d.harness.state().session.history.undo.len(), n + 1);
+    d.exec("edit.undo", json!({}));
+    assert_eq!(d.harness.state().session.project, before);
+    d.exec("edit.redo", json!({}));
+    assert_eq!(d.harness.state().session.state.preview_elements.len(), 3);
+}
+
+#[test]
+fn shift_click_mixed_text_image_video_moves_together_without_moving_the_background() {
+    let mut d = Driver::demo();
+    let base = d.harness.state().session.active_sequence().unwrap().video_tracks[0].items[0].clone();
+    let text = d.exec("graphics.newText", json!({"text":"Mixed group","position":[500,350],"time":0,"size":65}))["clip"].as_u64().unwrap();
+    let movie = d.add(base.item.0, [1300.0, 350.0], 22.0);
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/fixtures/media-transform/group-still.png");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    image::RgbaImage::from_pixel(300, 200, image::Rgba([30, 200, 120, 255])).save(&path).unwrap();
+    let image = d.exec("file.import", json!({"paths":[path],"imageSequence":false}))["items"][0].as_u64().unwrap();
+    let still = d.add(image, [1300.0, 800.0], 80.0);
+    let ids = [format!("program.layer.{text}.0"), format!("program.media.{movie}"), format!("program.media.{still}")];
+    let origins: Vec<_> = ids.iter().map(|id| d.rect(id).center()).collect();
+    for (index, p) in origins.iter().enumerate() {
+        d.call("ui.click", json!({"x":p.x,"y":p.y,"modifiers":{"shift":index>0}}));
+    }
+    assert_eq!(d.harness.state().session.state.preview_elements.len(), 3);
+    let n = d.harness.state().session.history.undo.len();
+    let before = d.harness.state().session.project.clone();
+    let offset = egui::vec2(-45.0, 30.0);
+    d.drag(origins[1], origins[1] + offset);
+    for (index, id) in ids.iter().enumerate() {
+        assert!((d.rect(id).center() - origins[index] - offset).length() < 1.5);
+    }
+    assert_eq!(d.harness.state().session.active_sequence().unwrap().find_item(base.id).unwrap().1, &base);
+    assert_eq!(d.harness.state().session.history.undo.len(), n + 1);
+    d.exec("edit.undo", json!({}));
+    assert_eq!(d.harness.state().session.project, before);
+}

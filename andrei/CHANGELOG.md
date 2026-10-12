@@ -1,5 +1,13 @@
 # Personal changes
 
+## 2026-10-12 — Shift-click and relative preview groups
+
+Shift-click visible Program elements to extend the selection, including internal
+layers within one Graphic clip and mixed text/image/video selections. Drag a selected
+body to translate the selection live while preserving spacing, size and timing,
+with one Undo. Timeline title-position synchronization and Option-drag duplication
+retain their existing behavior. See [usage](README.md#preview-transforms).
+
 ## 2026-10-11 — Option drag, synchronized titles and ten tracks
 
 Option-drag a text, image or video body in Program to create a same-time,

@@ -197,7 +197,11 @@ impl DragState {
     }
 }
 
-fn select_layer(app: &mut FilmcraftApp, clip: ClipId, layer: usize) {
+fn select_layer(app: &mut FilmcraftApp, clip: ClipId, layer: usize, add: bool) {
+    if add || !filmcraft_engine::preview::selected(&app.session).is_empty() {
+        super::preview_selection::choose(app, filmcraft_engine::preview::Element { clip, layer: Some(layer) }, add);
+        return;
+    }
     if app.session.state.selection.contains(&clip) {
         // A Program click must retain a timeline multi-selection for synchronized positioning.
         app.session.state.graphic_layers = vec![layer];
@@ -534,6 +538,10 @@ fn end_edit(app: &mut FilmcraftApp, ui: &egui::Ui) {
 pub(crate) fn deselect_on_monitor(app: &mut FilmcraftApp, ui: &egui::Ui) {
     end_edit(app, ui);
     app.session.state.graphic_layers.clear();
+    if !app.session.state.preview_elements.is_empty() {
+        app.session.state.preview_elements.clear();
+        app.session.state.selection.clear();
+    }
     if app.session.state.selected_mask.is_some()
         && let Err(e) = app.session.execute("masks.select", json!({"none": true}))
     {
@@ -559,7 +567,7 @@ pub fn monitor_overlay(app: &mut FilmcraftApp, ui: &mut egui::Ui, pic: Rect, fra
     let editing = app.ui.gfx_edit.clone();
     // ---- boxes and handles
     let graphics_tool = matches!(tool, Tool::Selection | Tool::Type | Tool::VerticalType | Tool::Rectangle | Tool::Ellipse | Tool::Pen);
-    if graphics_tool {
+    if graphics_tool && filmcraft_engine::preview::selected(&app.session).len() < 2 {
         for v in views.iter().filter(|v| Some(v.clip) == sel_clip) {
             let q = v.quad();
             let selected = sel_layers.contains(&v.layer);
@@ -636,6 +644,9 @@ pub fn monitor_overlay(app: &mut FilmcraftApp, ui: &mut egui::Ui, pic: Rect, fra
         }
     }
 
+    if super::preview_selection::monitor_group(app, ui, pic, frame, &resp, &views) {
+        return;
+    }
     // Media and graphics share this response, so only one overlay owns a gesture.
     if crate::panels::media_transform::monitor_overlay(app, ui, pic, frame, &resp, &views, drag.is_none()) {
         return;
@@ -696,7 +707,7 @@ pub fn monitor_overlay(app: &mut FilmcraftApp, ui: &mut egui::Ui, pic: Rect, fra
                             end_edit(app, ui);
                         }
                         if !(Some(v.clip) == sel_clip && sel_layers.contains(&v.layer)) {
-                            select_layer(app, v.clip, v.layer);
+                            select_layer(app, v.clip, v.layer, false);
                         }
                         let mut d = DragState::new(DragKind::Move, v.clip, v.layer, p);
                         d.origin = Some((v.spec.transform.position, v.canvas_to_screen, v.quad()));
@@ -881,7 +892,7 @@ pub fn monitor_overlay(app: &mut FilmcraftApp, ui: &mut egui::Ui, pic: Rect, fra
                 }
             }
             Tool::Selection => {
-                if resp.double_clicked() {
+                if resp.double_clicked() && !super::preview_selection::shift_click(ui) {
                     if let Some(v) = views.iter().find(|v| v.is_text() && v.hit(p)) {
                         start_edit_at(app, ui, v, p, &mut actions);
                     }
@@ -889,7 +900,7 @@ pub fn monitor_overlay(app: &mut FilmcraftApp, ui: &mut egui::Ui, pic: Rect, fra
                     if app.ui.gfx_edit.is_some() {
                         end_edit(app, ui);
                     }
-                    select_layer(app, v.clip, v.layer);
+                    select_layer(app, v.clip, v.layer, super::preview_selection::shift_click(ui));
                 } else {
                     deselect_on_monitor(app, ui);
                 }

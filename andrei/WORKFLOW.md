@@ -18,6 +18,9 @@ licensing, command architecture and preservation of user projects still apply.
    `bash andrei/build.sh --no-package`. Use these binaries for one short native
    smoke check. For UI changes, inspect one representative screenshot. Exercise
    save/reopen when serialization changes and export when rendering changes.
+   Native probes use a fresh temporary `--data-dir` each run: reusing an unsaved
+   test session can open a recovery dialog that blocks synthetic clicks. Launch
+   and drive the disposable window in one operation; close only that test instance.
 4. Commit and push, then `bash andrei/build.sh --package-only`. Packaging the
    already-verified binaries records the new commit without another build.
    If code changes after the build, rebuild the affected product before packaging.

@@ -54,3 +54,21 @@ Undo/Redo, save/reopen, and opening the prior three-track synthetic project with
 at least ten video/audio tracks. The Program screenshot was visually inspected.
 Local proof files are in `verification/preview-native/`, outside Git. No original
 user projects were modified during verification.
+
+## Shift-click preview selection and relative group movement
+
+Verified on 2026-10-12 using targeted checks, without repeating workspace CI.
+Formatting and engine/UI Clippy passed. Fifteen relevant tests passed: four
+preview engine regressions, eight media-transform UI tests and three existing
+graphics UI regressions. New coverage includes internal layers in one Graphic,
+separate graphic clips, mixed text/image/video groups, preserved spacing, hostile
+parameters, selection invalidation and one-step Undo. The two new acceptance tests
+were repeated after fixes to click-modifier handling and rapid Shift double-clicks.
+
+Desktop/CLI release builds succeeded; the native rapid-click finding required one
+additional product build. The final native proof used fresh temporary data to avoid
+a recovery dialog left by an earlier interrupted test session. It verified Shift
+selection of internal/separate titles and a mixed text/video/image group, relative
+movement, one-step Undo/Redo and saving a synthetic project. Both selected-title
+and moved-mixed-group screenshots were visually inspected. Local proof files are
+in `verification/group-native/`, outside Git. Original user projects were untouched.

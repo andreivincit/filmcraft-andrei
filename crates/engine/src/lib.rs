@@ -290,6 +290,10 @@ pub struct EditorState {
     /// Selected layers (indices among the graphic layers, 0 = back) of the selected graphic clip.
     #[serde(default)]
     pub graphic_layers: Vec<usize>,
+    /// Explicit Program selection, including individual layers of different graphic clips.
+    /// Transient editor state; timeline selection continues to support title synchronization.
+    #[serde(default)]
+    pub preview_elements: Vec<preview::Element>,
     /// The mask being edited on the Program monitor (Effect Controls selection).
     #[serde(default)]
     pub selected_mask: Option<masks::MaskSel>,

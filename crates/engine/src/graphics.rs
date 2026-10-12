@@ -1011,6 +1011,7 @@ pub fn commands() -> Vec<CommandSpec> {
             set_text_type,
         ),
         spec("graphics.selectLayer", "Select Graphic Layer", &[], None, r#"{"clip":id?,"layers":[n]}"#, has_graphic, |s, p| {
+            s.state.preview_elements.clear();
             let clip = target_clip(s, p).ok_or_else(|| bad("graphics.selectLayer", "no graphic clip"))?;
             let layers: Vec<usize> =
                 p.get("layers").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).map(|v| v as usize).collect()).unwrap_or_default();

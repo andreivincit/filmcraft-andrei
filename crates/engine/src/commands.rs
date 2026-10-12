@@ -2247,6 +2247,7 @@ fn build() -> Vec<CommandSpec> {
             let clips: Vec<ClipId> =
                 p.get("clips").and_then(Value::as_array).map(|a| a.iter().filter_map(|v| v.as_u64().map(ClipId)).collect()).unwrap_or_default();
             let clips = with_links(s, &clips);
+            s.state.preview_elements.clear();
             // selecting clips leaves trim mode (Premiere: clip and edit point selections are exclusive)
             s.state.edit_points.clear();
             s.state.trim_shift = Default::default();
@@ -2605,6 +2606,16 @@ fn build() -> Vec<CommandSpec> {
             crate::preview::move_clip
         ),
         cmd!("preview.ensureTracks", "Prepare Ten Video and Audio Tracks", [], None, "{}", always, crate::preview::ensure_tracks),
+        cmd!("preview.select", "Select Preview Element", [], None, r#"{"clip":id,"layer":n?,"add":bool?,"retain":bool?}"#, has_seq, crate::preview::select),
+        cmd!(
+            "preview.translate",
+            "Move Preview Group",
+            [],
+            None,
+            r#"{"moves":[{"clip":id,"layer":n?,"position":[x,y]}],"time":ticks?,"merge":bool?,"begin":bool?}"#,
+            has_seq,
+            crate::preview::translate
+        ),
         cmd!(
             "motion.set",
             "Transform Clip",

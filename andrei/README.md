@@ -45,6 +45,20 @@ retain them. New Sequence starts with ten of each. Tracks can require scrolling
 in the timeline; all twenty need not fit on screen at once. Automation commands:
 `preview.move` and `preview.ensureTracks`.
 
+Shift-click additional visible texts, shapes, images or videos in Program to select
+them together, including multiple internal layers of one Graphic clip. Each selected
+element has a blue outline. Release Shift and drag the body of any selected element:
+the group moves live, preserving relative offsets, sizes and timing, as one Undo.
+The selection is temporary; no permanent group or nested sequence is created.
+Click an unselected element without Shift to replace the selection, or empty Program
+space to clear it. Locked/hidden elements are excluded. Group dragging uses Selection
+with playback paused; hold Cmd to bypass snapping. Individual resize/anchor handles
+are shown again when only one element is selected. Option-drag retains the existing
+behavior of duplicating the grabbed element. Timeline title synchronization described
+above remains separate: explicit preview groups translate relatively instead of
+assigning all titles to one position. Automation: `preview.select`,
+`preview.translate` and the `preview_elements` field returned by `state.inspect`.
+
 The official `/Applications/FilmCraft.app` continues to receive ArtCraft Launcher updates.
 Our app is `../Applications/FilmCraft Andrei.app`, with a different bundle identifier and
 settings, logs, autosaves and recovery in `../local-data`. Media and `.fcproj` projects can

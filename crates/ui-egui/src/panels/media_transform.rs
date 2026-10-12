@@ -3,6 +3,7 @@
 //! `motion.set` commands, merged for the duration of one pointer gesture.
 
 use egui::{Color32, Pos2, Rect, Response, Stroke, StrokeKind, pos2, vec2};
+use filmcraft_engine::preview::Element;
 use filmcraft_geom::{Affine, Vec2};
 use filmcraft_project::{ClipId, ItemKind};
 use filmcraft_time::Tick;
@@ -117,6 +118,9 @@ fn hit<'a>(app: &FilmcraftApp, views: &'a [View], graphics: &[LayerView], p: Pos
 }
 
 fn graphic_handle(app: &FilmcraftApp, graphics: &[LayerView], p: Pos2) -> bool {
+    if filmcraft_engine::preview::selected(&app.session).len() > 1 {
+        return false;
+    }
     graphics.iter().filter(|v| app.session.state.selection.contains(&v.clip) && app.session.state.graphic_layers.contains(&v.layer)).any(|v| {
         let q = v.quad();
         let corners = q.iter().any(|c| (*c - p).length() <= 9.0);
@@ -124,6 +128,44 @@ fn graphic_handle(app: &FilmcraftApp, graphics: &[LayerView], p: Pos2) -> bool {
         let a = v.to_screen.apply(v.spec.transform.anchor);
         corners || edges || (pos2(a.x as f32, a.y as f32) - p).length() <= 7.0
     })
+}
+
+pub(crate) fn selection_geometry(app: &FilmcraftApp, pic: Rect, frame: (u32, u32), clip: ClipId) -> Option<(Vec2, Affine, [Pos2; 4])> {
+    views(app, pic, frame).into_iter().find(|v| v.clip == clip).map(|v| (v.position, v.screen_to_frame, v.quad))
+}
+
+pub(crate) fn body_hit(app: &FilmcraftApp, pic: Rect, frame: (u32, u32), clip: ClipId, p: Pos2) -> bool {
+    views(app, pic, frame).iter().any(|v| v.clip == clip && v.hit(p))
+}
+
+pub(crate) fn front_element(app: &FilmcraftApp, pic: Rect, frame: (u32, u32), graphics: &[LayerView], p: Pos2) -> Option<Element> {
+    let seq = app.session.active_sequence()?;
+    let media = views(app, pic, frame);
+    for tr in seq.video_tracks.iter().rev().filter(|t| t.enabled) {
+        let Some(it) = tr.item_at(app.session.playhead()).filter(|it| it.enabled) else { continue };
+        if let Some(v) = graphics.iter().find(|v| v.clip == it.id && v.hit(p)) {
+            return (!tr.locked).then_some(Element { clip: v.clip, layer: Some(v.layer) });
+        }
+        if let Some(v) = media.iter().find(|v| v.clip == it.id && v.hit(p)) {
+            return Some(Element { clip: v.clip, layer: None });
+        }
+        if (tr.locked || it.effect("motion").is_some_and(|e| !e.enabled))
+            && pic.width() > 0.0
+            && pic.height() > 0.0
+            && let Some(size) = app.session.project.source_size(it.item)
+        {
+            let motion = filmcraft_render::motion_matrix(seq, it, size, app.session.project.source_par(it.item), it.source_time_at(app.session.playhead()));
+            let point =
+                Vec2::new((p.x - pic.min.x) as f64 / pic.width() as f64 * frame.0 as f64, (p.y - pic.min.y) as f64 / pic.height() as f64 * frame.1 as f64);
+            if motion.inverse().is_some_and(|m| {
+                let v = m.apply(point);
+                v.x >= 0.0 && v.y >= 0.0 && v.x <= size.0 as f64 && v.y <= size.1 as f64
+            }) {
+                return None;
+            }
+        }
+    }
+    None
 }
 
 #[derive(Clone)]
@@ -180,7 +222,9 @@ pub(crate) fn monitor_overlay(
             app.auto.add(&format!("program.media.{}", v.clip.0), visible, "Move clip");
         }
     }
-    if let Some(v) = selected {
+    if let Some(v) = selected
+        && filmcraft_engine::preview::selected(&app.session).len() < 2
+    {
         painter.add(egui::Shape::closed_line(v.quad.to_vec(), Stroke::new(1.0, app.tokens.accent)));
         for (n, p) in v.quad.iter().enumerate() {
             let r = Rect::from_center_size(*p, vec2(8.0, 8.0));
@@ -203,7 +247,7 @@ pub(crate) fn monitor_overlay(
             let handle = selected.and_then(|v| v.handle(start).map(|n| (v, Some(n))));
             let target = handle.or_else(|| hit(app, &views, graphics, start).map(|v| (v, None)));
             if let Some((v, corner)) = target {
-                select(app, ui, v.clip);
+                select(app, ui, v.clip, false);
                 drag = Some(Drag {
                     view: v.clone(),
                     start,
@@ -283,13 +327,17 @@ pub(crate) fn monitor_overlay(
         && !graphic_handle(app, graphics, p)
         && let Some(v) = hit(app, &views, graphics, p)
     {
-        select(app, ui, v.clip);
+        select(app, ui, v.clip, super::preview_selection::shift_click(ui));
         return true;
     }
     handled
 }
 
-fn select(app: &mut FilmcraftApp, ui: &egui::Ui, clip: ClipId) {
+fn select(app: &mut FilmcraftApp, ui: &egui::Ui, clip: ClipId, add: bool) {
+    if add || !filmcraft_engine::preview::selected(&app.session).is_empty() {
+        super::preview_selection::choose(app, Element { clip, layer: None }, add);
+        return;
+    }
     super::graphics::deselect_on_monitor(app, ui);
     if let Err(e) = app.session.execute("timeline.select", json!({"clips": [clip.0]})) {
         app.ui.status = e.to_string();

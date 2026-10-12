@@ -8,6 +8,126 @@ use serde_json::{Value, json};
 
 use crate::{EngineError, Result, Session, commands};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Element {
+    pub clip: ClipId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<usize>,
+}
+
+/// Explicit preview selection is invalidated when another selection command changes clips.
+pub fn selected(s: &Session) -> Vec<Element> {
+    let all = &s.state.preview_elements;
+    if all.is_empty() || s.state.selection.iter().any(|c| !all.iter().any(|e| e.clip == *c)) || all.iter().any(|e| !s.state.selection.contains(&e.clip)) {
+        return Vec::new();
+    }
+    all.iter().copied().filter(|e| element_effect(s, *e, s.playhead()).is_ok()).collect()
+}
+
+fn element_effect(s: &Session, element: Element, time: Tick) -> Result<Option<usize>> {
+    let bad = |why| commands::bad("preview.select", why);
+    let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
+    let (track, it) = q.find_item(element.clip).ok_or_else(|| bad("no such clip"))?;
+    let tr = q.track(track).ok_or_else(|| bad("no such track"))?;
+    if tr.kind != TrackKind::Video || tr.locked || !tr.enabled || !it.enabled || !it.range().contains(time) {
+        return Err(bad("element must be visible on an unlocked video track"));
+    }
+    if !it.effect("motion").is_some_and(|e| e.enabled) {
+        return Err(bad("Motion is disabled"));
+    }
+    match s.project.item(it.item).map(|i| &i.kind) {
+        Some(ItemKind::Graphic { width, height, .. }) => {
+            let ei = element.layer.and_then(|n| layer_indices(&it.effects).get(n).copied()).ok_or_else(|| bad("invalid graphic layer"))?;
+            if !it.effects.get(ei).and_then(|e| eval_layer(e, it.source_time_at(time), (*width, *height))).is_some_and(|sp| sp.enabled) {
+                return Err(bad("layer is hidden"));
+            }
+            Ok(Some(ei))
+        }
+        Some(ItemKind::AdjustmentLayer { .. }) | None => Err(bad("unsupported preview element")),
+        _ if element.layer.is_none() && s.project.source_size(it.item).is_some() => Ok(None),
+        _ => Err(bad("invalid media element")),
+    }
+}
+
+pub fn select(s: &mut Session, p: &Value) -> Result<Value> {
+    let element: Element = serde_json::from_value(p.clone()).map_err(|_| commands::bad("preview.select", "need clip and optional layer index"))?;
+    element_effect(s, element, s.playhead())?;
+    let add = p.get("add").and_then(Value::as_bool).unwrap_or(false);
+    let mut elements = selected(s);
+    if add && elements.is_empty() {
+        // Seed Shift-click from the existing single/timeline selection, only visible elements.
+        for c in &s.state.selection {
+            let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
+            let graphic = q.find_item(*c).and_then(|(_, it)| s.project.item(it.item)).is_some_and(|i| matches!(i.kind, ItemKind::Graphic { .. }));
+            let layers = if graphic { s.state.graphic_layers.iter().copied().map(Some).collect::<Vec<_>>() } else { vec![None] };
+            for layer in layers {
+                let e = Element { clip: *c, layer };
+                if element_effect(s, e, s.playhead()).is_ok() && !elements.contains(&e) {
+                    elements.push(e);
+                }
+            }
+        }
+    }
+    if !add && !(p.get("retain").and_then(Value::as_bool).unwrap_or(false) && elements.contains(&element)) {
+        elements.clear();
+    }
+    if !elements.contains(&element) {
+        if elements.len() >= 1024 {
+            return Err(commands::bad("preview.select", "at most 1024 elements"));
+        }
+        elements.push(element);
+    }
+    s.state.selection.clear();
+    for e in &elements {
+        if !s.state.selection.contains(&e.clip) {
+            s.state.selection.push(e.clip);
+        }
+    }
+    let graphic_clip = elements.iter().find(|e| e.layer.is_some()).map(|e| e.clip);
+    s.state.graphic_layers = elements.iter().filter(|e| Some(e.clip) == graphic_clip).filter_map(|e| e.layer).collect();
+    s.state.preview_elements = elements;
+    s.state.selected_mask = None;
+    s.state.edit_points.clear();
+    s.state.transition_selection.clear();
+    s.state.gap_selection = None;
+    s.state.caption_selection.clear();
+    Ok(json!({"elements":s.state.preview_elements}))
+}
+
+/// All absolute positions are supplied from a gesture's initial geometry, avoiding drift.
+pub fn translate(s: &mut Session, p: &Value) -> Result<Value> {
+    let bad = |why| commands::bad("preview.translate", why);
+    let moves = p.get("moves").and_then(Value::as_array).filter(|a| !a.is_empty() && a.len() <= 1024).ok_or_else(|| bad("need 1..1024 moves"))?;
+    let time = commands::time_p(s, p, "");
+    if time.is_none() && ["time", "frame", "seconds", "timecode"].iter().any(|k| p.get(*k).is_some()) {
+        return Err(bad("invalid time"));
+    }
+    let time = time.unwrap_or(s.playhead());
+    let mut validated = Vec::new();
+    for m in moves {
+        let element: Element = serde_json::from_value(m.clone()).map_err(|_| bad("invalid element"))?;
+        if validated.iter().any(|(e, _, _)| *e == element) {
+            return Err(bad("duplicate move target"));
+        }
+        let a = m.get("position").and_then(Value::as_array).filter(|a| a.len() == 2).ok_or_else(|| bad("need position [x,y]"))?;
+        let coord = |n| a.get(n).and_then(Value::as_f64).filter(|v| v.is_finite() && v.abs() <= 1e9);
+        let (Some(x), Some(y)) = (coord(0), coord(1)) else { return Err(bad("invalid position")) };
+        let ei = element_effect(s, element, time)?;
+        validated.push((element, ei, Vec2::new(x, y)));
+    }
+    if p.get("begin").and_then(Value::as_bool).unwrap_or(false) {
+        s.history.merge_key = None;
+    }
+    let merge = p.get("merge").and_then(Value::as_bool).unwrap_or(false).then_some("preview.translate");
+    s.edit_sequence_as("Move Preview Group", merge, |q, _, _| {
+        for (e, ei, position) in &validated {
+            set_position(q, e.clip, *ei, time, *position)?;
+        }
+        Ok(())
+    })?;
+    Ok(Value::Null)
+}
+
 pub fn move_clip(s: &mut Session, p: &Value) -> Result<Value> {
     let bad = |why| commands::bad("preview.move", why);
     let clip = commands::clip_p(p, "clip").ok_or_else(|| bad("need clip"))?;
@@ -102,6 +222,7 @@ pub fn move_clip(s: &mut Session, p: &Value) -> Result<Value> {
             tr.items.push(original);
             q.video_tracks.insert(index + 1, tr);
             state.selection = vec![id];
+            state.preview_elements.clear();
             state.graphic_layers = if graphic { vec![0] } else { Vec::new() };
             (id, effect_index)
         } else {
@@ -260,5 +381,46 @@ mod tests {
         s.execute("preview.ensureTracks", json!({})).unwrap();
         let q = s.active_sequence().unwrap();
         assert_eq!((q.video_tracks.len(), q.audio_tracks.len()), (12, 14));
+    }
+
+    #[test]
+    fn explicit_group_selection_and_atomic_translation_validate_all_targets() {
+        let mut s = demo();
+        s.execute("playhead.set", json!({"seconds":2})).unwrap();
+        let a = s.execute("graphics.newText", json!({"text":"A","position":[300,400],"time":0})).unwrap()["clip"].as_u64().unwrap();
+        s.execute("graphics.newText", json!({"clip":a,"text":"B","position":[300,600]})).unwrap();
+        s.execute("preview.select", json!({"clip":a,"layer":0})).unwrap();
+        s.execute("preview.select", json!({"clip":a,"layer":1,"add":true})).unwrap();
+        assert_eq!(selected(&s).len(), 2);
+        assert_eq!(s.state.selection, vec![ClipId(a)]);
+        let before = s.project.clone();
+        let n = s.history.undo.len();
+        for i in 1..=3 {
+            s.execute("preview.translate",json!({"moves":[{"clip":a,"layer":0,"position":[300+i*10,400+i*10]},{"clip":a,"layer":1,"position":[300+i*10,600+i*10]}],"merge":true,"begin":i==1})).unwrap();
+        }
+        let layers = s.execute("graphics.list", json!({"clip":a})).unwrap();
+        assert_eq!(layers["layers"][0]["position"], json!([330.0, 430.0]));
+        assert_eq!(layers["layers"][1]["position"], json!([330.0, 630.0]));
+        assert_eq!(s.history.undo.len(), n + 1);
+        s.execute("edit.undo", json!({})).unwrap();
+        assert_eq!(s.project, before);
+        for p in [
+            json!({"moves":[]}),
+            json!({"moves":[{"clip":a,"layer":0,"position":[350,450]},{"clip":u64::MAX,"position":[1,2]}]}),
+            json!({"moves":[{"clip":a,"layer":0,"position":[1e30,0]}]}),
+            json!({"moves":[{"clip":a,"layer":0,"position":[350,450]}],"time":"invalid"}),
+        ] {
+            assert!(s.execute("preview.translate", p).is_err());
+            assert_eq!(s.project, before);
+        }
+        for p in [json!({"clip":a,"layer":u64::MAX,"add":true}), json!({"clip":u64::MAX}), json!({"clip":a,"layer":"invalid"})] {
+            assert!(s.execute("preview.select", p).is_err());
+            assert_eq!(selected(&s).len(), 2);
+        }
+        s.execute("timeline.select", json!({"clips":[a]})).unwrap();
+        assert!(selected(&s).is_empty());
+        let tr = s.active_sequence().unwrap().find_item(ClipId(a)).unwrap().0;
+        s.execute("timeline.setTrack", json!({"track":tr.0,"locked":true})).unwrap();
+        assert!(s.execute("preview.translate", json!({"moves":[{"clip":a,"layer":0,"position":[1,2]}]})).is_err());
     }
 }
