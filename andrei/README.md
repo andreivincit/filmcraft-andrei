@@ -101,6 +101,30 @@ Automation: `captions.autoGenerate {language:"ro"|"en"|"auto",model?:"whisper-ba
 under Media Analysis & Transcription. Other catalogue models can be installed with
 `transcript.downloadModel` when explicitly chosen.
 
+## Automatically generated editable text
+
+Select a timeline video clip (with its linked audio) or an audio clip, then click
+the blue **T** after Toggle Proxies under the **Program** preview. It uses the
+language chosen in **Text → Captions** and the same local speech model to create
+individual Graphic text clips on a new **Generated text** video track above the
+existing video tracks. Without selection it uses the marked In/Out or audible
+sequence, as automatic captions do. Groups have up to two lines and approximately
+four seconds of speech, using white text with a black outline by default.
+
+Select any generated clip to edit its wording, font, style, size and appearance
+in **Essential Graphics → Edit** or **Properties**. With playback paused and
+Selection (V), drag the text in Program to reposition it. Existing caption tracks
+are preserved. Generation is one Undo, runs in the background and refuses stale
+results if the project changes. Save/reopen uses the existing Graphic format.
+The button can be hidden/restored using the Program Button Editor (+).
+
+Automation: `graphics.autoGenerateText {language:"auto"|"ro"|"en",model?:"whisper-base"}`,
+`program.transport.graphics.autoGenerateText`, and the existing `graphics.*`
+commands. The automatic-caption button continues to generate Subtitle tracks.
+Verified with eight focused engine/monitor tests, formatting and Clippy, one final
+product build, and native Romanian recognition, styling, Program dragging,
+Undo/Redo and save/reopen in `../verification/auto-text-native/`.
+
 ## Build
 
 The local Rust toolchain is in `../.tools`; upstream fonts are in `../craft-fonts`.

@@ -412,7 +412,59 @@ fn captions_from_words(s: &mut Session, p: &Value, words: &[SeqWord]) -> Result<
     Ok(json!({"track": tid.0, "captions": n}))
 }
 
-type CaptionOutput = std::result::Result<Arc<filmcraft_project::Project>, String>;
+/// Timed graphic clips use the existing project format and normal text editing tools.
+fn text_from_words(s: &mut Session, words: &[SeqWord]) -> Result<Vec<filmcraft_project::ClipId>> {
+    use filmcraft_geom::Vec2;
+    use filmcraft_project::{Param, ParamValue, Track, TrackKind};
+
+    let rules = CaptionRules { max_chars: 32, max_duration: Tick::from_seconds_f64(4.0), ..Default::default() };
+    let blocks = tx::caption_blocks(words, &rules, s.sequence_rate());
+    let seq = s.state.active_sequence.ok_or(EngineError::NoSequence)?;
+    let font = s.prefs.graphics.default_font.clone();
+    let ligatures = s.prefs.graphics.ligatures;
+    s.edit("Create Editable Text", |pr, _| {
+        let settings = pr.sequence(seq).ok_or(EngineError::NoSequence)?.settings.clone();
+        let (w, h, rate) = (settings.width, settings.height, settings.frame_rate);
+        let source = crate::graphics::graphic_source(pr, w, h, rate);
+        let mut track = Track::new(TrackId(pr.alloc_id()), TrackKind::Video, "Generated text".into());
+        let mut clips = Vec::new();
+        let size = (f64::from(w).min(f64::from(h)) * 0.05).max(1.0);
+        for block in blocks {
+            let mut layer = filmcraft_project::graphic::new_text_layer(&block.text, Vec2::new(f64::from(w) * 0.1, f64::from(h) * 0.78), size);
+            for (id, value) in [
+                ("align", ParamValue::Choice(1)),
+                ("box_width", ParamValue::Float(f64::from(w) * 0.8)),
+                ("stroke", ParamValue::Bool(true)),
+                ("stroke_width", ParamValue::Float(size * 0.06)),
+                ("ligatures", ParamValue::Bool(ligatures)),
+            ] {
+                layer.params.insert(id.into(), Param::new(value));
+            }
+            if !font.trim().is_empty() {
+                layer.params.insert("font".into(), Param::new(ParamValue::Text(font.trim().into())));
+            }
+            let duration = block.end - block.start;
+            let mut clip = pr
+                .make_track_item(source, TrackKind::Video, block.start, TimeRange::new(Tick::ZERO, duration), rate)
+                .ok_or_else(|| bad("graphics.autoGenerateText", "cannot create a timed text clip"))?;
+            clip.name = block.text;
+            clip.effects.push(layer);
+            for effect in &mut clip.effects {
+                filmcraft_project::resolve_auto_points(effect, (w, h), (w, h));
+            }
+            clips.push(clip.id);
+            track.items.push(clip);
+        }
+        track.sort();
+        let q = pr.sequence_mut(seq).ok_or(EngineError::NoSequence)?;
+        // Append above all existing video tracks so the text remains visible over B-roll.
+        q.video_tracks.push(track);
+        q.check().map_err(EngineError::Other)?;
+        Ok(clips)
+    })
+}
+
+type CaptionOutput = std::result::Result<(Arc<filmcraft_project::Project>, Vec<filmcraft_project::ClipId>), String>;
 type CaptionSlot = Arc<std::sync::Mutex<Option<CaptionOutput>>>;
 
 pub struct PendingCaptions {
@@ -420,17 +472,19 @@ pub struct PendingCaptions {
     baseline: Arc<filmcraft_project::Project>,
     output: CaptionSlot,
     started: web_time::Instant,
+    graphics: bool,
 }
 
-fn auto_captions(s: &mut Session, p: &Value) -> Result<Value> {
+fn auto_captions(s: &mut Session, p: &Value, graphics: bool) -> Result<Value> {
     use std::sync::atomic::Ordering;
+    let cmd = if graphics { "graphics.autoGenerateText" } else { "captions.autoGenerate" };
     has_seq(s).map_err(EngineError::Other)?;
     if !s.caption_jobs.is_empty() {
-        return Err(bad("captions.autoGenerate", "caption generation is already running"));
+        return Err(bad(cmd, "caption/text generation is already running"));
     }
     let language = str_p(p, "language").unwrap_or("auto");
     if !["auto", "ro", "en"].contains(&language) {
-        return Err(bad("captions.autoGenerate", "language must be auto, ro or en"));
+        return Err(bad(cmd, "language must be auto, ro or en"));
     }
     let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
     let solo = q.audio_tracks.iter().any(|t| t.enabled && t.solo && !t.muted);
@@ -461,18 +515,23 @@ fn auto_captions(s: &mut Session, p: &Value) -> Result<Value> {
         }
     }
     if !audible.audio_tracks.iter().any(|t| !t.items.is_empty()) {
-        return Err(bad("captions.autoGenerate", "no audible audio in the selection; select its audio clip or clear the selection to caption the sequence"));
+        return Err(bad(cmd, "no audible audio in the selection; select its audio clip or clear the selection to caption the sequence"));
     }
     let model = str_p(p, "model").unwrap_or(&s.prefs.media_analysis.whisper_model);
     if s.transcriber.is_none() {
         let info = filmcraft_speech::models::find(model).ok_or_else(|| speech_err(SpeechError::UnknownModel(model.into())))?;
         if !models_dir().is_some_and(|d| filmcraft_speech::models::installed(&d, info)) {
-            return Err(bad("captions.autoGenerate", "speech model is not installed; download it with transcript.downloadModel"));
+            return Err(bad(cmd, "speech model is not installed; download it with transcript.downloadModel"));
         }
     }
     let mut params = json!({"language":language,"model":model,"diarize":false,"name":"Auto captions"});
-    let id = s.jobs.iter().map(|j| j.id).max().unwrap_or(0).checked_add(1).ok_or_else(|| bad("captions.autoGenerate", "job ids exhausted"))?;
-    let job = crate::Job { id, label: "Generating captions".into(), progress: Default::default(), result: Default::default() };
+    let id = s.jobs.iter().map(|j| j.id).max().unwrap_or(0).checked_add(1).ok_or_else(|| bad(cmd, "job ids exhausted"))?;
+    let job = crate::Job {
+        id,
+        label: if graphics { "Generating editable text" } else { "Generating captions" }.into(),
+        progress: Default::default(),
+        result: Default::default(),
+    };
     job.progress.total.store(1000, Ordering::Relaxed);
     *job.progress.status.lock().unwrap_or_else(|e| e.into_inner()) = "Loading speech model…".into();
     let mut worker = Session::new(s.services.clone());
@@ -485,7 +544,7 @@ fn auto_captions(s: &mut Session, p: &Value) -> Result<Value> {
     let target = output.clone();
     let progress = job.progress.clone();
     let run = move || {
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> std::result::Result<Arc<filmcraft_project::Project>, String> {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> CaptionOutput {
             let (words, detected) = caption_audio(&mut worker, &params, &audible, &mut |fraction, status| {
                 progress.done.store((fraction.clamp(0.0, 1.0) * 1000.0) as u64, Ordering::Relaxed);
                 *progress.status.lock().unwrap_or_else(|e| e.into_inner()) = status.into();
@@ -498,14 +557,19 @@ fn auto_captions(s: &mut Session, p: &Value) -> Result<Value> {
             if params["language"] == "auto" {
                 params["language"] = json!(detected);
             }
-            captions_from_words(&mut worker, &params, &words).map_err(|e| e.to_string())?;
-            Ok(worker.project)
+            let clips = if graphics {
+                text_from_words(&mut worker, &words).map_err(|e| e.to_string())?
+            } else {
+                captions_from_words(&mut worker, &params, &words).map_err(|e| e.to_string())?;
+                Vec::new()
+            };
+            Ok((worker.project, clips))
         }))
         .unwrap_or_else(|_| Err("Caption generation stopped unexpectedly; the project was preserved".into()));
         *target.lock().unwrap_or_else(|e| e.into_inner()) = Some(result);
     };
     std::thread::Builder::new().name("filmcraft-auto-captions".into()).spawn(run).map_err(|e| EngineError::Other(e.to_string()))?;
-    s.caption_jobs.push(PendingCaptions { job: job.clone(), baseline: s.project.clone(), output, started: web_time::Instant::now() });
+    s.caption_jobs.push(PendingCaptions { job: job.clone(), baseline: s.project.clone(), output, started: web_time::Instant::now(), graphics });
     s.jobs.push(job);
     Ok(json!({"job":id,"language":language}))
 }
@@ -583,15 +647,28 @@ pub fn poll_captions(s: &mut Session) {
         } else {
             result
         };
-        let outcome = outcome.and_then(|project| {
-            s.edit("Generate Auto Captions", |p, _| {
+        let outcome = outcome.and_then(|(project, clips)| {
+            let playhead = s.playhead();
+            let selected = s.state.active_sequence.and_then(|id| project.sequence(id)).and_then(|q| {
+                clips
+                    .iter()
+                    .find(|id| q.find_item(**id).is_some_and(|(_, clip)| clip.range().contains(playhead)))
+                    .or_else(|| clips.iter().find(|id| q.find_item(**id).is_some()))
+                    .copied()
+            });
+            s.edit(if pending.graphics { "Generate Editable Text" } else { "Generate Auto Captions" }, |p, st| {
                 *p = (*project).clone();
+                if let Some(clip) = selected {
+                    st.selection = vec![clip];
+                    st.graphic_layers = vec![0];
+                    st.caption_selection.clear();
+                }
                 Ok(())
             })
             .map_err(|e| e.to_string())?;
-            s.toast("Auto captions generated");
+            s.toast(if pending.graphics { "Editable text generated — select a text clip to style or move it" } else { "Auto captions generated" });
             Ok(filmcraft_export::Report {
-                path: "Captions".into(),
+                path: if pending.graphics { "Editable text" } else { "Captions" }.into(),
                 frames: 0,
                 seconds: pending.started.elapsed().as_secs_f64(),
                 bytes: 0,
@@ -601,7 +678,7 @@ pub fn poll_captions(s: &mut Session) {
         });
         if let Err(e) = &outcome {
             *pending.job.progress.error.lock().unwrap_or_else(|e| e.into_inner()) = Some(e.clone());
-            s.error_toast("captions.autoGenerate", e.clone());
+            s.error_toast(if pending.graphics { "graphics.autoGenerateText" } else { "captions.autoGenerate" }, e.clone());
         }
         *pending.job.result.lock().unwrap_or_else(|e| e.into_inner()) = Some(outcome);
         pending.job.progress.done.store(1000, Ordering::Relaxed);
@@ -649,7 +726,16 @@ pub fn commands() -> Vec<CommandSpec> {
             &["Sequence", "Transcript"],
             r#"{"language":"auto|ro|en","model":"whisper-base"?}"#,
             can_transcribe,
-            auto_captions,
+            |s, p| auto_captions(s, p, false),
+            true,
+        ),
+        spec(
+            "graphics.autoGenerateText",
+            "Generate Editable Text…",
+            &["Graphics and Titles"],
+            r#"{"language":"auto|ro|en","model":"whisper-base"?}"#,
+            can_transcribe,
+            |s, p| auto_captions(s, p, true),
             true,
         ),
         spec(

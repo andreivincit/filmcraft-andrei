@@ -743,6 +743,7 @@ fn transport(app: &mut FilmcraftApp, ui: &mut egui::Ui, row: Rect, which: Which)
             (Icon::Extract, "sequence.extract", tl!("Extract (')")),
             (Icon::Camera, "exportFrame", tl!("Export Frame")),
             (Icon::Proxy, "media.toggleProxies", tl!("Toggle Proxies")),
+            (Icon::Type, "graphics.autoGenerateText", "Generate editable text from selected clip"),
         ]
     };
     let mut buttons = buttons;
@@ -761,7 +762,9 @@ fn transport(app: &mut FilmcraftApp, ui: &mut egui::Ui, row: Rect, which: Which)
             continue;
         }
         let r = Rect::from_min_size(pos2(x, row.min.y + 2.0), vec2(bw - 2.0, 26.0));
-        let resp = ui.interact(r, egui::Id::new((prefix, cmd)), Sense::click()).on_hover_text(tip);
+        let enabled = cmd != "graphics.autoGenerateText"
+            || (app.session.caption_jobs.is_empty() && (app.session.transcriber.is_some() || filmcraft_engine::transcript::speech_available()));
+        let resp = ui.interact(r, egui::Id::new((prefix, cmd)), if enabled { Sense::click() } else { Sense::hover() }).on_hover_text(tip);
         app.auto.add(&format!("{prefix}.transport.{cmd}"), r, tip);
         let is_play = cmd.ends_with("play") || cmd == "playback.toggle";
         if resp.hovered() {
@@ -769,7 +772,9 @@ fn transport(app: &mut FilmcraftApp, ui: &mut egui::Ui, row: Rect, which: Which)
         }
         let sz = if is_play { 16.0 } else { 14.0 };
         let on = cmd == "media.toggleProxies" && app.session.media.use_proxies();
-        let col = if on {
+        let col = if !enabled {
+            t.text_faint
+        } else if cmd == "graphics.autoGenerateText" || on {
             t.accent
         } else if resp.hovered() {
             t.tab_text_active
@@ -777,8 +782,12 @@ fn transport(app: &mut FilmcraftApp, ui: &mut egui::Ui, row: Rect, which: Which)
             t.icon
         };
         icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(sz, sz)), icon, col);
-        if resp.clicked() {
+        if enabled && resp.clicked() {
             let r = match cmd {
+                "graphics.autoGenerateText" => {
+                    crate::panels::text::generate_auto_text(app, true);
+                    Ok(serde_json::Value::Null)
+                }
                 "src.markIn" => app.session.execute("markers.markIn", json!({"target": "source"})).map_err(|e| e.to_string()),
                 "src.markOut" => app.session.execute("markers.markOut", json!({"target": "source"})).map_err(|e| e.to_string()),
                 "src.goIn" | "src.goOut" | "src.stepBack" | "src.stepFwd" => {

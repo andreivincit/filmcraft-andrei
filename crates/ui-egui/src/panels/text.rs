@@ -91,18 +91,7 @@ fn auto_controls(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     );
     app.auto.add("text.captions.auto.generate", button, "Generate auto captions");
     if enabled && r.clicked() {
-        match app.session.execute("captions.autoGenerate", json!({"language":app.ui.caption_language})) {
-            Ok(v) => {
-                app.ui.caption_job = v["job"].as_u64();
-                app.stop();
-                app.ui.caption_status = "Generating selected audio…".into();
-            }
-            Err(e) => {
-                app.ui.caption_job = None;
-                app.ui.caption_status = e.to_string();
-                app.ui.status = e.to_string();
-            }
-        }
+        generate_auto_text(app, false);
     }
     if let Some(job) = app.session.jobs.iter().rev().find(|j| Some(j.id) == app.ui.caption_job) {
         if !job.progress.finished.load(std::sync::atomic::Ordering::Acquire) {
@@ -110,10 +99,31 @@ fn auto_controls(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         } else if let Some(error) = job.progress.error.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
             app.ui.caption_status = error.clone();
         } else {
-            app.ui.caption_status = "Auto captions generated".into();
+            app.ui.caption_status = if job.label == "Generating editable text" { "Editable text generated" } else { "Auto captions generated" }.into();
         }
     }
     ui.painter().text(rect.min + vec2(10.0, 34.0), Align2::LEFT_TOP, &app.ui.caption_status, Tokens::ui(11.0), t.text_dim);
+}
+
+/// Shared entry point for the caption panel and the Program monitor's editable text button.
+pub fn generate_auto_text(app: &mut FilmcraftApp, graphics: bool) {
+    let command = if graphics { "graphics.autoGenerateText" } else { "captions.autoGenerate" };
+    match app.session.execute(command, json!({"language":app.ui.caption_language})) {
+        Ok(v) => {
+            app.ui.caption_job = v["job"].as_u64();
+            app.stop();
+            if graphics {
+                app.ui.gfx_templates.tab = "edit".into();
+            }
+            app.ui.caption_status = if graphics { "Generating editable text from selected audio…" } else { "Generating selected audio…" }.into();
+            app.ui.status = app.ui.caption_status.clone();
+        }
+        Err(e) => {
+            app.ui.caption_job = None;
+            app.ui.caption_status = e.to_string();
+            app.ui.status = e.to_string();
+        }
+    }
 }
 
 fn tool_button(app: &mut FilmcraftApp, ui: &mut egui::Ui, r: Rect, icon: Icon, id: &str, label: &str, enabled: bool) -> bool {

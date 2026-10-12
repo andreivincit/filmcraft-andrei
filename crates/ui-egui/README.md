@@ -30,6 +30,16 @@ outline. `timeline.transitionDropPreview` exposes the span and edge to automatio
 `transition_drop_ui` covers both edges of short video/audio clips, hover without project edits,
 the committed span and undo. Set `FILMCRAFT_UI_SNAPSHOT_DIR` to render screenshots with wgpu.
 
+## Automatic editable text (personal fork)
+
+The Program transport's blue T (`program.transport.graphics.autoGenerateText`)
+dispatches `graphics.autoGenerateText` with the Text panel's caption language.
+It creates normal Graphic clips above the existing video tracks and opens
+Essential Graphics Edit. Existing preview selection, dragging and text styling
+apply to each generated clip. Both caption and graphic generation share progress,
+cancellation, stale-project protection and one Undo. The Button Editor controls
+the new action independently of the Source monitor.
+
 ## Localisation
 
 Edit > Language offers English, Japanese, Spanish, Brazilian Portuguese, Ukrainian, Simplified

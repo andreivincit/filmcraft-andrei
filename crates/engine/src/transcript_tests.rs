@@ -49,6 +49,66 @@ fn finish_auto(s: &mut Session) {
 }
 
 #[test]
+fn auto_text_selected_audio_creates_stylable_graphics_and_preserves_captions() {
+    let (mut s, _, start) = session();
+    let audio = s.active_sequence().unwrap().audio_tracks[0].items[0].clone();
+    let video = s.active_sequence().unwrap().video_tracks.iter().flat_map(|t| &t.items).find(|c| c.link.is_some() && c.link == audio.link).unwrap().id;
+    s.execute("timeline.select", json!({"clips":[video.0]})).unwrap();
+    s.execute("captions.newTrack", json!({"name":"Keep my captions"})).unwrap();
+    s.set_playhead(start + Tick::from_seconds_f64(0.3));
+    let before = s.project.clone();
+    let n = s.history.undo.len();
+    let tracks = s.active_sequence().unwrap().video_tracks.len();
+    s.execute("graphics.autoGenerateText", json!({"language":"en"})).unwrap();
+    assert_eq!(s.project, before);
+    finish_auto(&mut s);
+    assert!(s.jobs.last().unwrap().to_json()["result"].get("error").is_none());
+    let q = s.active_sequence().unwrap();
+    assert_eq!(q.caption_tracks, before.sequence(s.state.active_sequence.unwrap()).unwrap().caption_tracks);
+    assert_eq!(q.video_tracks.len(), tracks + 1);
+    let texts = &q.video_tracks.last().unwrap().items;
+    assert_eq!(texts.len(), 2);
+    assert_eq!(texts[0].name, "Hello um world.");
+    assert!(texts.iter().all(|c| c.start >= start && c.end() <= audio.end()));
+    assert!(texts.iter().all(|c| matches!(s.project.item(c.item).unwrap().kind, filmcraft_project::ItemKind::Graphic { .. })));
+    let clip = texts[0].id;
+    assert_eq!(s.state.selection, vec![clip]);
+    assert_eq!(s.history.undo.len(), n + 1);
+    let after = s.project.clone();
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(s.project, before);
+    s.execute("edit.redo", json!({})).unwrap();
+    assert_eq!(s.project, after);
+    s.execute("graphics.setText", json!({"clip":clip.0,"text":"Text corectat"})).unwrap();
+    s.execute("graphics.set", json!({"clip":clip.0,"props":{"position":[450,250],"size":72,"font":"Inter","font_style":"Bold"}})).unwrap();
+    let layers = s.execute("graphics.list", json!({"clip":clip.0})).unwrap();
+    assert!(layers.to_string().contains("Text corectat"), "{layers}");
+    assert_eq!(layers["layers"][0]["position"], json!([450.0, 250.0]));
+    let (_, item) = s.active_sequence().unwrap().find_item(clip).unwrap();
+    let text = item.effects.iter().find(|e| e.effect == filmcraft_project::graphic::TEXT_LAYER).unwrap();
+    assert_eq!(text.params["font_style"].value, filmcraft_project::ParamValue::Text("Bold".into()));
+    assert_eq!(text.params["size"].value, filmcraft_project::ParamValue::Float(72.0));
+    s.active_sequence().unwrap().check().unwrap();
+}
+
+#[test]
+fn auto_text_invalid_cancelled_and_stale_jobs_preserve_work() {
+    let (mut s, _, _) = session();
+    let before = s.project.clone();
+    assert!(s.execute("graphics.autoGenerateText", json!({"language":"invalid"})).is_err());
+    let id = s.execute("graphics.autoGenerateText", json!({"language":"ro"})).unwrap()["job"].as_u64().unwrap();
+    assert!(s.execute("captions.autoGenerate", json!({})).is_err());
+    s.execute("jobs.cancel", json!({"job":id})).unwrap();
+    finish_auto(&mut s);
+    assert_eq!(s.project, before);
+    s.execute("graphics.autoGenerateText", json!({"language":"en"})).unwrap();
+    s.execute("file.newProject", json!({"name":"Preserve new project"})).unwrap();
+    let changed = s.project.clone();
+    finish_auto(&mut s);
+    assert_eq!(s.project, changed);
+}
+
+#[test]
 fn auto_captions_ro_en_create_editable_tracks_in_one_undo() {
     for language in ["ro", "en"] {
         let (mut s, item, _) = session();
