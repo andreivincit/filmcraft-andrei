@@ -1,5 +1,14 @@
 # Personal changes
 
+## 2026-10-12 — local automatic captions in Romanian and English
+
+Enable the existing Whisper backend in personal desktop/CLI builds. Text → Captions
+now offers Romanian, English and automatic language detection, with background
+generation, progress and cancellation. Results add an editable subtitle track and
+transcripts as one Undo; concurrent project edits are protected. The multilingual
+base model is stored separately from the app/repository. Romanian is also available
+in transcription preferences. See [usage](README.md#automatic-captions-romanian-and-english).
+
 ## 2026-10-12 — Shift-click and relative preview groups
 
 Shift-click visible Program elements to extend the selection, including internal

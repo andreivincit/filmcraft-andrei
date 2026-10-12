@@ -72,3 +72,27 @@ selection of internal/separate titles and a mixed text/video/image group, relati
 movement, one-step Undo/Redo and saving a synthetic project. Both selected-title
 and moved-mixed-group screenshots were visually inspected. Local proof files are
 in `verification/group-native/`, outside Git. Original user projects were untouched.
+
+## Local Romanian and English automatic captions
+
+Verified on 2026-10-12 with Whisper enabled in the personal desktop/CLI builds.
+Formatting and warning-free engine/UI Clippy passed with speech features enabled.
+Nine targeted transcript tests passed (seven engine, two UI), including background
+generation, language selection, cancellation, changed-project protection and one-step
+Undo/Redo. The optional tokenizer's former panic shortcut was replaced with an error.
+The full workspace suite was not repeated.
+
+One final desktop/CLI release build completed. Native recognition of locally generated
+six-second Romanian and five-second English voices completed in approximately 1.64 s
+and 1.24 s respectively on this laptop. These short synthetic timings do not establish
+performance on long recordings. English text matched the spoken example; Romanian
+included recognition errors ("subtitorile automat" for "subtitrările automate"), so
+the installed fast base model's output still needs proofreading.
+
+The new Captions button, responsive UI during recognition, editable subtitle tracks,
+single Undo/Redo, SRT export and saving/reopening both synthetic projects were verified.
+The Romanian Program screenshot was visually inspected. Proof files are under
+`verification/captions-native/`, outside Git; no user projects were changed.
+The multilingual whisper-base model's four catalogue files were size/SHA256 verified
+at the pinned source revision and installed in the separate local data directory.
+Models and recordings are not bundled or published in the source repository.

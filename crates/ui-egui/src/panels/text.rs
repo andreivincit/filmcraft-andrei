@@ -55,9 +55,48 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     }
     let body = Rect::from_min_max(pos2(rect.min.x, rect.min.y + 34.0), rect.max);
     match app.ui.text_tab.as_str() {
-        "Captions" => captions(app, ui, body),
+        "Captions" => {
+            auto_controls(app, ui, body);
+            captions(app, ui, Rect::from_min_max(body.min + vec2(0.0, 34.0), body.max));
+        }
         "Transcript" => transcript(app, ui, body),
         _ => crate::dock::placeholder(ui, body, &t, tl!("Graphics text search arrives with M10.1–M10.2")),
+    }
+}
+
+fn auto_controls(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
+    let t = app.tokens;
+    let picker = Rect::from_min_size(rect.min + vec2(10.0, 4.0), vec2(130.0, 24.0));
+    let options = [("auto", "Auto-detect"), ("ro", "Romanian"), ("en", "English")];
+    let label = options.iter().find(|(id, _)| *id == app.ui.caption_language).map_or("Auto-detect", |(_, label)| *label);
+    let response = crate::widgets::dropdown_text(ui, picker, label, &t, egui::Id::new("auto-caption-language"));
+    app.auto.add("text.captions.auto.language", picker, "Caption language");
+    egui::Popup::menu(&response).show(|ui| {
+        for (id, label) in options {
+            let r = ui.selectable_label(app.ui.caption_language == id, label);
+            app.auto.add(&format!("text.captions.auto.language.{id}"), r.rect, label);
+            if r.clicked() {
+                app.ui.caption_language = id.into();
+            }
+        }
+    });
+    let button = Rect::from_min_size(picker.right_top() + vec2(8.0, 0.0), vec2(160.0, 24.0));
+    let enabled = app.session.active_sequence().is_some() && filmcraft_speech_available(app) && app.session.caption_jobs.is_empty();
+    let r = ui.interact(button, egui::Id::new("text.captions.auto.generate"), if enabled { Sense::click() } else { Sense::hover() });
+    ui.painter().rect_filled(button, 4.0, if enabled { t.accent } else { t.field_bg });
+    ui.painter().text(
+        button.center(),
+        Align2::CENTER_CENTER,
+        if app.session.caption_jobs.is_empty() { "Generate auto captions" } else { "Generating…" },
+        Tokens::ui(12.0),
+        if enabled { Color32::WHITE } else { t.text_dim },
+    );
+    app.auto.add("text.captions.auto.generate", button, "Generate auto captions");
+    if enabled && r.clicked() {
+        match app.session.execute("captions.autoGenerate", json!({"language":app.ui.caption_language})) {
+            Ok(_) => app.stop(),
+            Err(e) => app.ui.status = e.to_string(),
+        }
     }
 }
 

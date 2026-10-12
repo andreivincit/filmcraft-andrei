@@ -118,7 +118,7 @@ fn item_audio(s: &Session, item: ItemId) -> Option<Vec<f32>> {
         return None;
     }
     let sr = filmcraft_speech::SAMPLE_RATE;
-    let len = dur.to_units_floor(sr as i64).max(0) as usize;
+    let len = usize::try_from(dur.to_units_floor(sr as i64)).ok().filter(|n| *n > 0 && *n <= 16_000 * 60 * 60)?;
     let buf = src.audio(0, len, sr).ok()?;
     Some(filmcraft_speech::downmix(&buf.channels))
 }
@@ -145,6 +145,10 @@ fn transcriber(s: &Session, p: &Value) -> Result<Arc<dyn Transcriber>> {
 }
 
 fn generate(s: &mut Session, p: &Value) -> Result<Value> {
+    generate_progress(s, p, &mut |_, _| true)
+}
+
+fn generate_progress(s: &mut Session, p: &Value, progress: filmcraft_speech::ProgressFn<'_>) -> Result<Value> {
     let items = targets(s, p);
     if items.is_empty() {
         return Err(bad("transcript.generate", "nothing to transcribe (pass `items`, select clips, or open a sequence with audio)"));
@@ -163,12 +167,13 @@ fn generate(s: &mut Session, p: &Value) -> Result<Value> {
     };
     let mut done: Vec<(ItemId, Transcript)> = Vec::new();
     let mut skipped = Vec::new();
-    for item in items {
+    let count = items.len().max(1) as f32;
+    for (index, item) in items.into_iter().enumerate() {
         let Some(audio) = item_audio(s, item) else {
             skipped.push(item.0);
             continue;
         };
-        let mut tr = t.transcribe(&audio, &opts, &mut |_, _| true).map_err(speech_err)?;
+        let mut tr = t.transcribe(&audio, &opts, &mut |fraction, status| progress((index as f32 + fraction) / count, status)).map_err(speech_err)?;
         tr.normalize();
         done.push((item, tr));
     }
@@ -377,6 +382,10 @@ fn remove_fillers(s: &mut Session, p: &Value) -> Result<Value> {
 
 fn create_captions(s: &mut Session, p: &Value) -> Result<Value> {
     let words = sequence_words(s);
+    captions_from_words(s, p, &words)
+}
+
+fn captions_from_words(s: &mut Session, p: &Value, words: &[SeqWord]) -> Result<Value> {
     let d = CaptionRules::default();
     let rules = CaptionRules {
         max_chars: u64_p(p, "maxChars").map(|n| n as usize).unwrap_or(d.max_chars),
@@ -386,19 +395,151 @@ fn create_captions(s: &mut Session, p: &Value) -> Result<Value> {
         gap_frames: p.get("gapFrames").and_then(Value::as_i64).unwrap_or(d.gap_frames),
         break_pause: d.break_pause,
     };
-    let blocks = tx::caption_blocks(&words, &rules, s.sequence_rate());
+    let blocks = tx::caption_blocks(words, &rules, s.sequence_rate());
     let format = str_p(p, "format").and_then(CaptionFormat::from_name).unwrap_or_default();
     let name = str_p(p, "name").unwrap_or("Transcript").to_string();
+    let language = str_p(p, "language").unwrap_or("en").to_string();
     let n = blocks.len();
     let tid = s.edit_sequence("Create Captions", |q, ctx, st| {
         let tid = TrackId(ctx.alloc());
         let mut t = CaptionTrack::new(tid, name, format);
+        t.language = language;
         t.captions = tx::blocks_to_captions(&blocks, ctx);
         q.caption_tracks.insert(0, t);
         st.caption_selection.clear();
         Ok(tid)
     })?;
     Ok(json!({"track": tid.0, "captions": n}))
+}
+
+type CaptionOutput = std::result::Result<Arc<filmcraft_project::Project>, String>;
+type CaptionSlot = Arc<std::sync::Mutex<Option<CaptionOutput>>>;
+
+pub struct PendingCaptions {
+    job: crate::Job,
+    baseline: Arc<filmcraft_project::Project>,
+    output: CaptionSlot,
+    started: web_time::Instant,
+}
+
+fn auto_captions(s: &mut Session, p: &Value) -> Result<Value> {
+    use std::sync::atomic::Ordering;
+    has_seq(s).map_err(EngineError::Other)?;
+    if !s.caption_jobs.is_empty() {
+        return Err(bad("captions.autoGenerate", "caption generation is already running"));
+    }
+    let language = str_p(p, "language").unwrap_or("auto");
+    if !["auto", "ro", "en"].contains(&language) {
+        return Err(bad("captions.autoGenerate", "language must be auto, ro or en"));
+    }
+    let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
+    let solo = q.audio_tracks.iter().any(|t| t.enabled && t.solo && !t.muted);
+    let mut items = Vec::new();
+    for track in q.audio_tracks.iter().filter(|t| t.enabled && !t.muted && (!solo || t.solo)) {
+        for clip in track.items.iter().filter(|i| i.enabled && i.speed > 0.0 && !i.reverse && i.frame_hold.is_none()) {
+            if let Some(id) = media_item(s, clip.item)
+                && !items.contains(&id)
+            {
+                if s.project.item(id).is_some_and(|i| i.duration() > Tick::from_seconds_f64(3600.0)) {
+                    return Err(bad("captions.autoGenerate", "source audio exceeds one hour; split or shorten the source file first"));
+                }
+                items.push(id);
+            }
+        }
+    }
+    if items.is_empty() {
+        return Err(bad("captions.autoGenerate", "the sequence has no enabled audio clips"));
+    }
+    let model = str_p(p, "model").unwrap_or(&s.prefs.media_analysis.whisper_model);
+    if s.transcriber.is_none() {
+        let info = filmcraft_speech::models::find(model).ok_or_else(|| speech_err(SpeechError::UnknownModel(model.into())))?;
+        if !models_dir().is_some_and(|d| filmcraft_speech::models::installed(&d, info)) {
+            return Err(bad("captions.autoGenerate", "speech model is not installed; download it with transcript.downloadModel"));
+        }
+    }
+    let mut params = json!({"items":items.iter().map(|i|i.0).collect::<Vec<_>>(),"language":language,"model":model,"diarize":false,"name":"Auto captions"});
+    let id = s.jobs.iter().map(|j| j.id).max().unwrap_or(0).checked_add(1).ok_or_else(|| bad("captions.autoGenerate", "job ids exhausted"))?;
+    let job = crate::Job { id, label: "Generating captions".into(), progress: Default::default(), result: Default::default() };
+    job.progress.total.store(1000, Ordering::Relaxed);
+    let mut worker = Session::new(s.services.clone());
+    worker.project = s.project.clone();
+    worker.media = s.media.clone();
+    worker.state = s.state.clone();
+    worker.prefs = s.prefs.clone();
+    worker.transcriber = s.transcriber.clone();
+    let output = Arc::new(std::sync::Mutex::new(None));
+    let target = output.clone();
+    let progress = job.progress.clone();
+    let run = move || {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> std::result::Result<Arc<filmcraft_project::Project>, String> {
+            let report = generate_progress(&mut worker, &params, &mut |fraction, status| {
+                progress.done.store((fraction.clamp(0.0, 1.0) * 1000.0) as u64, Ordering::Relaxed);
+                *progress.status.lock().unwrap_or_else(|e| e.into_inner()) = status.into();
+                !progress.cancel.load(Ordering::Relaxed)
+            })
+            .map_err(|e| e.to_string())?;
+            let mut audible = worker.active_sequence().ok_or("No sequence")?.clone();
+            audible.audio_tracks.retain(|t| t.enabled && !t.muted && (!solo || t.solo));
+            let words = tx::sequence_words(&audible, &worker.project.transcripts);
+            if words.is_empty() {
+                return Err("No speech was recognized in the sequence's audio clips".into());
+            }
+            if params["language"] == "auto" {
+                params["language"] = report["items"].as_array().and_then(|a| a.first()).and_then(|i| i.get("language")).cloned().unwrap_or(json!("en"));
+            }
+            captions_from_words(&mut worker, &params, &words).map_err(|e| e.to_string())?;
+            Ok(worker.project)
+        }))
+        .unwrap_or_else(|_| Err("Caption generation stopped unexpectedly; the project was preserved".into()));
+        *target.lock().unwrap_or_else(|e| e.into_inner()) = Some(result);
+    };
+    std::thread::Builder::new().name("filmcraft-auto-captions".into()).spawn(run).map_err(|e| EngineError::Other(e.to_string()))?;
+    s.caption_jobs.push(PendingCaptions { job: job.clone(), baseline: s.project.clone(), output, started: web_time::Instant::now() });
+    s.jobs.push(job);
+    Ok(json!({"job":id,"language":language}))
+}
+
+pub fn poll_captions(s: &mut Session) {
+    use std::sync::atomic::Ordering;
+    let mut i = 0;
+    while i < s.caption_jobs.len() {
+        let result = s.caption_jobs[i].output.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let Some(result) = result else {
+            i += 1;
+            continue;
+        };
+        let pending = s.caption_jobs.remove(i);
+        let outcome = if pending.job.progress.cancel.load(Ordering::Relaxed) {
+            Err("Caption generation cancelled".into())
+        } else if !Arc::ptr_eq(&s.project, &pending.baseline) {
+            Err("The project changed during caption generation; run Generate again".into())
+        } else {
+            result
+        };
+        let outcome = outcome.and_then(|project| {
+            s.edit("Generate Auto Captions", |p, _| {
+                *p = (*project).clone();
+                Ok(())
+            })
+            .map_err(|e| e.to_string())?;
+            s.toast("Auto captions generated");
+            Ok(filmcraft_export::Report {
+                path: "Captions".into(),
+                frames: 0,
+                seconds: pending.started.elapsed().as_secs_f64(),
+                bytes: 0,
+                render_fps: 0.0,
+                extra_files: Vec::new(),
+            })
+        });
+        if let Err(e) = &outcome {
+            *pending.job.progress.error.lock().unwrap_or_else(|e| e.into_inner()) = Some(e.clone());
+            s.error_toast("captions.autoGenerate", e.clone());
+        }
+        *pending.job.result.lock().unwrap_or_else(|e| e.into_inner()) = Some(outcome);
+        pending.job.progress.done.store(1000, Ordering::Relaxed);
+        pending.job.progress.finished.store(true, Ordering::Release);
+    }
 }
 
 fn models(_: &mut Session, _: &Value) -> Result<Value> {
@@ -435,6 +576,15 @@ fn download_model(_: &mut Session, p: &Value) -> Result<Value> {
 
 pub fn commands() -> Vec<CommandSpec> {
     vec![
+        spec(
+            "captions.autoGenerate",
+            "Generate Auto Captions…",
+            &["Sequence", "Transcript"],
+            r#"{"language":"auto|ro|en","model":"whisper-base"?}"#,
+            can_transcribe,
+            auto_captions,
+            true,
+        ),
         spec(
             "transcript.generate",
             "Transcribe…",

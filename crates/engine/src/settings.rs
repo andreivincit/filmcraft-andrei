@@ -722,6 +722,7 @@ const TRANSCRIBE_SCOPE: &[(&str, &str)] =
     &[("sequenceClips", "Auto-transcribe only clips in sequences"), ("allImported", "Auto-transcribe all imported clips")];
 const SPEAKERS: &[(&str, &str)] = &[("on", "Label speakers"), ("off", "Don't label speakers")];
 const LANGUAGES: &[(&str, &str)] = &[
+    ("ro", "Romanian"),
     ("en", "English"),
     ("es", "Spanish"),
     ("fr", "French"),

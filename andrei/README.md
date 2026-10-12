@@ -65,6 +65,34 @@ settings, logs, autosaves and recovery in `../local-data`. Media and `.fcproj` p
 be opened through File > Open without copying their media. Preserve a project backup before
 opening it in a future release that might migrate its format.
 
+## Automatic captions (Romanian and English)
+
+Open the **Captions and Graphics** workspace, then **Text → Captions**. Choose
+**Romanian**, **English** or **Auto-detect** and click **Generate auto captions**.
+The personal desktop/CLI builds enable the existing pure-Rust Whisper backend.
+The installed multilingual `whisper-base` model lives outside Git and the application
+bundle in `../local-data/models/whisper-base/` (about 293 MB, downloaded once and
+checked against the source catalogue's pinned SHA-256 hashes). Inference is local;
+there is no API account, audio upload or per-transcription fee.
+
+Generation runs in a cancellable background job; the status bar shows its progress.
+It transcribes the enabled, audible audio-track media (respecting mute/solo), maps
+the words to the edited sequence and creates a new editable Subtitle track. Existing
+tracks and cuts are retained. One Undo removes the generated transcript/captions;
+SRT export and normal project save/reopen use the existing caption tools.
+If the project is edited/replaced during recognition, the result is refused instead
+of overwriting that work; run Generate again. Native inputs are capped at one hour
+per source file. Reverse/held clips and the upstream subclip/nested-audio limitations
+remain outside this first implementation. Accuracy depends on the audio and model;
+the text stays editable. `transcript.generate` remains the upstream synchronous
+command; use the new button/`captions.autoGenerate` for background generation.
+
+Automation: `captions.autoGenerate {language:"ro"|"en"|"auto",model?:"whisper-base"}`,
+`jobs.list`, `jobs.cancel`, `captions.list`, `captions.export` and
+`text.captions.auto.<language|generate>` UI widgets. Settings also includes Romanian
+under Media Analysis & Transcription. Other catalogue models can be installed with
+`transcript.downloadModel` when explicitly chosen.
+
 ## Build
 
 The local Rust toolchain is in `../.tools`; upstream fonts are in `../craft-fonts`.

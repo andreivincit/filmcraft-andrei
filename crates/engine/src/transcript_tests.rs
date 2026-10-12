@@ -39,6 +39,64 @@ fn words(s: &mut Session) -> Vec<String> {
     r["words"].as_array().unwrap().iter().map(|w| w["text"].as_str().unwrap().to_string()).collect()
 }
 
+fn finish_auto(s: &mut Session) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !s.caption_jobs.is_empty() && std::time::Instant::now() < deadline {
+        s.execute("jobs.list", json!({})).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(s.caption_jobs.is_empty());
+}
+
+#[test]
+fn auto_captions_ro_en_create_editable_tracks_in_one_undo() {
+    for language in ["ro", "en"] {
+        let (mut s, item, _) = session();
+        let source_in = s.active_sequence().unwrap().audio_tracks[0].items[0].source_in;
+        let mut t = Transcript { language: language.into(), ..Default::default() };
+        t.words.push(Word::new(
+            if language == "ro" { "Subtitrări românești." } else { "English captions." },
+            source_in + Tick::from_seconds_f64(0.2),
+            source_in + Tick::from_seconds_f64(1.0),
+        ));
+        s.transcriber = Some(Arc::new(FixedTranscriber { transcript: t, id: "fixed".into() }));
+        let before = s.project.clone();
+        let n = s.history.undo.len();
+        let job = s.execute("captions.autoGenerate", json!({"language":language})).unwrap()["job"].as_u64().unwrap();
+        assert_eq!(s.project, before, "starting the job does not modify the project");
+        finish_auto(&mut s);
+        assert!(s.jobs.iter().find(|j| j.id == job).unwrap().to_json()["result"].get("error").is_none());
+        assert!(s.project.transcripts.contains_key(&item));
+        let track = &s.active_sequence().unwrap().caption_tracks[0];
+        assert_eq!(track.language, language);
+        assert!(!track.captions.is_empty());
+        assert_eq!(s.history.undo.len(), n + 1);
+        let after = s.project.clone();
+        s.execute("edit.undo", json!({})).unwrap();
+        assert_eq!(s.project, before);
+        s.execute("edit.redo", json!({})).unwrap();
+        assert_eq!(s.project, after);
+    }
+}
+
+#[test]
+fn auto_captions_cancel_invalid_language_and_changed_project_preserve_work() {
+    let (mut s, _, _) = session();
+    let before = s.project.clone();
+    assert!(s.execute("captions.autoGenerate", json!({"language":"invalid"})).is_err());
+    assert_eq!(s.project, before);
+    assert!(s.caption_jobs.is_empty());
+    let job = s.execute("captions.autoGenerate", json!({"language":"ro"})).unwrap()["job"].as_u64().unwrap();
+    s.execute("jobs.cancel", json!({"job":job})).unwrap();
+    finish_auto(&mut s);
+    assert_eq!(s.project, before);
+    s.execute("captions.autoGenerate", json!({"language":"en"})).unwrap();
+    s.execute("file.newProject", json!({"name":"Do not overwrite"})).unwrap();
+    let next = s.project.clone();
+    finish_auto(&mut s);
+    assert_eq!(s.project, next);
+}
+
 #[test]
 fn generate_inspect_search_and_rename() {
     let (mut s, item, start) = session();
