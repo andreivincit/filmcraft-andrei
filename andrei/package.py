@@ -4,13 +4,14 @@ import plistlib
 import shutil
 import subprocess
 import tempfile
+from migrate_data import migrate
 
 source = Path(__file__).resolve().parents[1]
 workspace = source.parent
 applications = workspace / "Applications"
 applications.mkdir(exist_ok=True)
 app = applications / "FilmCraft Andrei.app"
-(workspace / "local-data").mkdir(exist_ok=True)
+migrate()
 version = next(line.split('"')[1] for line in (source / "Cargo.toml").read_text().splitlines() if line.startswith("version ="))
 commit = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
 
@@ -32,8 +33,7 @@ with tempfile.TemporaryDirectory(prefix="package-", dir=applications) as tempora
     wrapper.write_text('''#!/bin/bash
 set -euo pipefail
 bundle_bin="$(cd "$(dirname "$0")" && pwd)"
-workspace="$(cd "$bundle_bin/../../../.." && pwd)"
-export FILMCRAFT_DATA_DIR="$workspace/local-data"
+export FILMCRAFT_DATA_DIR="${FILMCRAFT_DATA_DIR:-$HOME/Library/Application Support/FilmCraft Andrei}"
 exec "$bundle_bin/FilmCraftCore" "$@"
 ''')
     wrapper.chmod(0o755)

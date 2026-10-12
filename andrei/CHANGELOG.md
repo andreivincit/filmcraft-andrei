@@ -1,5 +1,14 @@
 # Personal changes
 
+## 2026-10-12 — normal macOS launch can read speech models
+
+The installed Finder-launched app reported `config.json: Operation not permitted`
+for the model stored under Documents. Move personal runtime data to
+`~/Library/Application Support/FilmCraft Andrei` through packaging and the launcher.
+Migrate the model by rename with hash verification, copy initial preferences/workspaces,
+preserve old autosaves/recovery, and retain an explicit data-directory override.
+No Rust changes or compilation are required.
+
 ## 2026-10-12 — caption button feedback and selected audio
 
 Close the language popup immediately after choosing and use a standard Generate

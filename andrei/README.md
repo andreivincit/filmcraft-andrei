@@ -61,7 +61,11 @@ assigning all titles to one position. Automation: `preview.select`,
 
 The official `/Applications/FilmCraft.app` continues to receive ArtCraft Launcher updates.
 Our app is `../Applications/FilmCraft Andrei.app`, with a different bundle identifier and
-settings, logs, autosaves and recovery in `../local-data`. Media and `.fcproj` projects can
+settings, models, logs and recovery in `~/Library/Application Support/FilmCraft Andrei`.
+The previous `../local-data` retains its settings/autosaves/recovery as a local backup;
+packaging moves the models once and copies preferences/workspaces without overwriting
+existing Application Support settings. This avoids macOS blocking model reads from
+Documents on ordinary Finder launches. Media and `.fcproj` projects can
 be opened through File > Open without copying their media. Preserve a project backup before
 opening it in a future release that might migrate its format.
 
@@ -71,7 +75,8 @@ Open the **Captions and Graphics** workspace, then **Text → Captions**. Choose
 **Romanian**, **English** or **Auto-detect** and click **Generate auto captions**.
 The personal desktop/CLI builds enable the existing pure-Rust Whisper backend.
 The installed multilingual `whisper-base` model lives outside Git and the application
-bundle in `../local-data/models/whisper-base/` (about 293 MB, downloaded once and
+bundle in `~/Library/Application Support/FilmCraft Andrei/models/whisper-base/`
+(about 293 MB, downloaded once and
 checked against the source catalogue's pinned SHA-256 hashes). Inference is local;
 there is no API account, audio upload or per-transcription fee.
 
@@ -132,5 +137,7 @@ For a session that needs automation, launch the app executable with `--control 9
 The server listens on loopback only. The bundled `filmcraft-cli` can then use
 `--bridge 127.0.0.1:9876`, including `mcp --bridge 127.0.0.1:9876`.
 Normal launches keep the control server off. No global Codex settings are changed by this setup.
-Keep the app inside this workspace: its launcher resolves `local-data` relative to the bundle.
+The launcher uses the personal Application Support directory; `FILMCRAFT_DATA_DIR`
+can explicitly override it for a disposable agent session.
+Keep the app inside this workspace for the build/update scripts.
 Use a Finder alias or a Dock shortcut if you want easier access; do not move the bundle alone.
