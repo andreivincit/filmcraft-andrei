@@ -42,10 +42,13 @@ A text layer is one of two types, as in Premiere Pro (behaviour observed in Prem
 | Lines | only where Return was typed | wrap at the box's width; lines below the box's bottom are not shown, and the bottom-right handle turns into a red plus |
 | Selection box | fits the text | the box, whatever it holds |
 | New layer's anchor point | the origin (left end of the first baseline) | the box's top-left corner |
-| Dragging a handle | scales the layer about its anchor point: every handle scales both axes alike (Uniform Scale stays on), the font size is untouched | moves that side or corner of the box to the pointer, the opposite side stays; the text re-wraps at the same size and Scale is untouched |
+| Dragging a corner | changes font size, retaining Position and Scale | changes font size, retaining the paragraph box, Position and Scale |
+| Dragging a middle-side handle | scales the layer about its anchor point; font size stays fixed | moves that side of the box to the pointer, the opposite side stays; the text re-wraps at the same font size and Scale is untouched |
 
+- **Font size.** Corner travel along the box's diagonal changes the numeric font size, for both
+  point and paragraph text. The paragraph's wrapping width stays fixed.
 - **Point-text scale.** Only the pointer's travel along one side of the box counts: along its
-  width for the two side handles, along its height for the corners and the top and bottom handles.
+  width for the two side handles, along its height for the top and bottom handles.
   Travel `d` away from the anchor scales by `1 + d / r`, where `r` is the handle's distance from
   the anchor along that side, plus 60 points when the handle is nearer than 60 points (so a handle
   on the anchor does not scale without bound). A handle exactly on the anchor grows the text when
@@ -54,9 +57,17 @@ A text layer is one of two types, as in Premiere Pro (behaviour observed in Prem
   left side moves, the layer's origin moves with the corner, so the anchor point is renumbered to
   stay on the same spot of the picture and Position does not change.
 - **Anchor point.** Drag it with the Selection tool: the anchor moves, the layer stays (Position
-  and Anchor Point change together). It is picked before anything under it: a shape dragged by
-  its exact centre moves its anchor, not the shape, and the top-left handle of a new paragraph
-  box is reached only after moving the anchor.
+  and Anchor Point change together). Square handles take priority when they overlap the anchor,
+  so a new paragraph's top-left corner changes font size. A shape dragged by its exact centre
+  moves its anchor.
+- **Visual editing.** Double-click text with Selection, then click before or after a letter to
+  place the caret there. Hit testing follows the shaped text, including Unicode and line wraps.
+- **Timeline bulk edits.** Select multiple text clips and edit the visible selected title. Font,
+  style, font size, appearance and geometry changes through `graphics.set` also apply to the
+  other selected text clips, including titles at other times; wording stays local. Paragraph
+  edge drags assign the same box dimensions and anchor. Locked/disabled follower tracks are
+  skipped. Each gesture is one Undo; inactive clips edit at their clamped source time. Explicit
+  Program groups retain their existing relative translation behavior.
 - **Switching type.** Properties ▸ Text ▸ wrench ▸ **Text Properties** ▸ Text Layer Type
   (`graphics.setTextType`). To point text: the wrapped lines become real lines (also those the
   box hid). To paragraph text: the box is fitted to the text. Either way the text stays where it

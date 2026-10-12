@@ -40,6 +40,11 @@ apply to each generated clip. Both caption and graphic generation share progress
 cancellation, stale-project protection and one Undo. The Button Editor controls
 the new action independently of the Source monitor.
 
+Text corners change numeric font size;
+paragraph middle handles resize the wrapping box. Timeline text selections synchronize
+style and geometry from the visible title, retaining each clip's wording. Double-click
+to edit and single-click beside a letter to place the caret there.
+
 ## Localisation
 
 Edit > Language offers English, Japanese, Spanish, Brazilian Portuguese, Ukrainian, Simplified

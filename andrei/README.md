@@ -125,6 +125,25 @@ Verified with eight focused engine/monitor tests, formatting and Clippy, one fin
 product build, and native Romanian recognition, styling, Program dragging,
 Undo/Redo and save/reopen in `../verification/auto-text-native/`.
 
+## Visual text editing
+
+With playback paused and Selection (V), drag a selected text's corner to change its
+font size. For paragraph text, the middle handles resize its box and re-wrap words
+at the existing font size. Double-click a text to edit, then click before or after
+any letter to place the caret. Typing changes only that title's wording.
+
+Select several text clips in the timeline to synchronize typography, appearance,
+position and box size from the visible selected title. Selection is retained when
+clicking or double-clicking that title. The panels' font family/style/size changes,
+corner drags and paragraph box drags also reach titles at other times. Each edit is
+one Undo; locked/disabled follower tracks are skipped and wording/timing stay local.
+These controls apply to existing and automatically generated Graphic clips.
+Automation retains `graphics.set` and `program.layer.<clip>.<layer>.handle.<0..7>`;
+corners are 0–3, middle sides 4–7 (right 5, left 7).
+Verified with 21 graphics-engine and 17 focused UI tests, formatting/Clippy, one
+final product build, and a native gesture/style/caret/Undo/save-reopen probe with
+a representative screenshot in `../verification/text-edit-native/`.
+
 ## Build
 
 The local Rust toolchain is in `../.tools`; upstream fonts are in `../craft-fonts`.
