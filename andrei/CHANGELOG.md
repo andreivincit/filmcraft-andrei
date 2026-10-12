@@ -1,5 +1,13 @@
 # Personal changes
 
+## 2026-10-12 — caption button feedback and selected audio
+
+Close the language popup immediately after choosing and use a standard Generate
+button. Keep job progress and actionable errors visible directly in Captions.
+Decode selected clips and their linked audio rather than the full source file;
+without selection, honor In/Out or the audible timeline. Preserve transcript words
+outside the recognized source spans and retain the single-Undo/background safeguards.
+
 ## 2026-10-12 — local automatic captions in Romanian and English
 
 Enable the existing Whisper backend in personal desktop/CLI builds. Text → Captions

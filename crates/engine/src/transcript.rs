@@ -434,21 +434,34 @@ fn auto_captions(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
     let solo = q.audio_tracks.iter().any(|t| t.enabled && t.solo && !t.muted);
-    let mut items = Vec::new();
-    for track in q.audio_tracks.iter().filter(|t| t.enabled && !t.muted && (!solo || t.solo)) {
-        for clip in track.items.iter().filter(|i| i.enabled && i.speed > 0.0 && !i.reverse && i.frame_hold.is_none()) {
-            if let Some(id) = media_item(s, clip.item)
-                && !items.contains(&id)
-            {
-                if s.project.item(id).is_some_and(|i| i.duration() > Tick::from_seconds_f64(3600.0)) {
-                    return Err(bad("captions.autoGenerate", "source audio exceeds one hour; split or shorten the source file first"));
-                }
-                items.push(id);
+    let mut audible = q.clone();
+    audible.audio_tracks.retain(|t| t.enabled && !t.muted && (!solo || t.solo));
+    let selected: Vec<_> = q.video_tracks.iter().chain(q.audio_tracks.iter()).flat_map(|t| &t.items).filter(|c| s.state.selection.contains(&c.id)).collect();
+    let marks = q.mark_in.zip(q.mark_out).filter(|(a, b)| a < b);
+    for track in &mut audible.audio_tracks {
+        track.items.retain(|c| {
+            c.enabled
+                && c.speed.is_finite()
+                && c.speed > 0.0
+                && !c.reverse
+                && c.frame_hold.is_none()
+                && (selected.is_empty() || selected.iter().any(|v| v.id == c.id || (v.link.is_some() && v.link == c.link)))
+        });
+        if selected.is_empty()
+            && let Some((a, b)) = marks
+        {
+            track.items.retain(|c| c.start < b && c.end() > a);
+            for c in &mut track.items {
+                let start = c.start.max(a);
+                let end = c.end().min(b);
+                c.source_in += Tick::from_seconds_f64((start - c.start).seconds() * c.speed);
+                c.start = start;
+                c.duration = end - start;
             }
         }
     }
-    if items.is_empty() {
-        return Err(bad("captions.autoGenerate", "the sequence has no enabled audio clips"));
+    if !audible.audio_tracks.iter().any(|t| !t.items.is_empty()) {
+        return Err(bad("captions.autoGenerate", "no audible audio in the selection; select its audio clip or clear the selection to caption the sequence"));
     }
     let model = str_p(p, "model").unwrap_or(&s.prefs.media_analysis.whisper_model);
     if s.transcriber.is_none() {
@@ -457,10 +470,11 @@ fn auto_captions(s: &mut Session, p: &Value) -> Result<Value> {
             return Err(bad("captions.autoGenerate", "speech model is not installed; download it with transcript.downloadModel"));
         }
     }
-    let mut params = json!({"items":items.iter().map(|i|i.0).collect::<Vec<_>>(),"language":language,"model":model,"diarize":false,"name":"Auto captions"});
+    let mut params = json!({"language":language,"model":model,"diarize":false,"name":"Auto captions"});
     let id = s.jobs.iter().map(|j| j.id).max().unwrap_or(0).checked_add(1).ok_or_else(|| bad("captions.autoGenerate", "job ids exhausted"))?;
     let job = crate::Job { id, label: "Generating captions".into(), progress: Default::default(), result: Default::default() };
     job.progress.total.store(1000, Ordering::Relaxed);
+    *job.progress.status.lock().unwrap_or_else(|e| e.into_inner()) = "Loading speech model…".into();
     let mut worker = Session::new(s.services.clone());
     worker.project = s.project.clone();
     worker.media = s.media.clone();
@@ -472,20 +486,17 @@ fn auto_captions(s: &mut Session, p: &Value) -> Result<Value> {
     let progress = job.progress.clone();
     let run = move || {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> std::result::Result<Arc<filmcraft_project::Project>, String> {
-            let report = generate_progress(&mut worker, &params, &mut |fraction, status| {
+            let (words, detected) = caption_audio(&mut worker, &params, &audible, &mut |fraction, status| {
                 progress.done.store((fraction.clamp(0.0, 1.0) * 1000.0) as u64, Ordering::Relaxed);
                 *progress.status.lock().unwrap_or_else(|e| e.into_inner()) = status.into();
                 !progress.cancel.load(Ordering::Relaxed)
             })
             .map_err(|e| e.to_string())?;
-            let mut audible = worker.active_sequence().ok_or("No sequence")?.clone();
-            audible.audio_tracks.retain(|t| t.enabled && !t.muted && (!solo || t.solo));
-            let words = tx::sequence_words(&audible, &worker.project.transcripts);
             if words.is_empty() {
-                return Err("No speech was recognized in the sequence's audio clips".into());
+                return Err("No speech was recognized in the selected audio".into());
             }
             if params["language"] == "auto" {
-                params["language"] = report["items"].as_array().and_then(|a| a.first()).and_then(|i| i.get("language")).cloned().unwrap_or(json!("en"));
+                params["language"] = json!(detected);
             }
             captions_from_words(&mut worker, &params, &words).map_err(|e| e.to_string())?;
             Ok(worker.project)
@@ -497,6 +508,62 @@ fn auto_captions(s: &mut Session, p: &Value) -> Result<Value> {
     s.caption_jobs.push(PendingCaptions { job: job.clone(), baseline: s.project.clone(), output, started: web_time::Instant::now() });
     s.jobs.push(job);
     Ok(json!({"job":id,"language":language}))
+}
+
+/// Decode only the chosen timeline clips, keeping word times in each clip's source space.
+fn caption_audio(
+    s: &mut Session,
+    p: &Value,
+    audible: &filmcraft_project::Sequence,
+    progress: filmcraft_speech::ProgressFn<'_>,
+) -> Result<(Vec<SeqWord>, String)> {
+    let t = transcriber(s, p)?;
+    let language = str_p(p, "language").filter(|l| *l != "auto").map(str::to_string);
+    let opts = Options { language, diarize: false, ..Default::default() };
+    let clips: Vec<_> = audible.audio_tracks.iter().flat_map(|t| &t.items).collect();
+    let count = clips.len().max(1) as f32;
+    let mut transcripts = s.project.transcripts.clone();
+    let mut detected = "en".to_string();
+    for (index, clip) in clips.iter().enumerate() {
+        if !progress(index as f32 / count, "Decoding selected audio…") {
+            return Err(EngineError::Other("Caption generation cancelled".into()));
+        }
+        let source = s.source(clip.item).ok_or_else(|| EngineError::Other(format!("Cannot open audio for {}", clip.name)))?;
+        if !source.info().has_audio() {
+            return Err(EngineError::Other(format!("{} has no decodable audio", clip.name)));
+        }
+        let sr = filmcraft_speech::SAMPLE_RATE;
+        let duration = Tick::from_seconds_f64(clip.duration.seconds() * clip.speed);
+        let len = usize::try_from(duration.to_units_floor(i64::from(sr)))
+            .ok()
+            .filter(|n| *n > 0 && *n <= 16_000 * 60 * 60)
+            .ok_or_else(|| bad("captions.autoGenerate", "selected audio must be between one sample and one hour"))?;
+        let offset = clip.source_in.to_units_floor(i64::from(sr)).max(0);
+        let buffer = source.audio(offset, len, sr).map_err(|e| EngineError::Other(format!("Cannot decode {}: {e}", clip.name)))?;
+        let audio = filmcraft_speech::downmix(&buffer.channels);
+        let mut tr = t.transcribe(&audio, &opts, &mut |fraction, status| progress((index as f32 + fraction) / count, status)).map_err(speech_err)?;
+        if index == 0 {
+            detected = tr.language.clone();
+        }
+        for w in &mut tr.words {
+            w.start += clip.source_in;
+            w.end += clip.source_in;
+        }
+        let mut combined = transcripts.get(&clip.item).map(|t| (**t).clone()).unwrap_or_default();
+        let end = clip.source_in + duration;
+        combined.words.retain(|w| w.end <= clip.source_in || w.start >= end);
+        combined.language = tr.language;
+        combined.source = tr.source;
+        combined.words.extend(tr.words);
+        combined.normalize();
+        transcripts.insert(clip.item, Arc::new(combined));
+    }
+    let words = tx::sequence_words(audible, &transcripts);
+    s.edit("Transcribe selected audio", |project, _| {
+        project.transcripts = transcripts;
+        Ok(())
+    })?;
+    Ok((words, detected))
 }
 
 pub fn poll_captions(s: &mut Session) {

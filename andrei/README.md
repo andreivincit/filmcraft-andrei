@@ -76,13 +76,16 @@ checked against the source catalogue's pinned SHA-256 hashes). Inference is loca
 there is no API account, audio upload or per-transcription fee.
 
 Generation runs in a cancellable background job; the status bar shows its progress.
-It transcribes the enabled, audible audio-track media (respecting mute/solo), maps
-the words to the edited sequence and creates a new editable Subtitle track. Existing
+It decodes only selected audible timeline clips and their linked audio (respecting
+mute/solo). With no selection, it uses sequence In/Out when both are set, otherwise
+all audible timeline clips. It maps words to the edited sequence and creates a new
+editable Subtitle track. The language menu closes after choosing; progress and errors
+remain visible directly below Generate. Existing
 tracks and cuts are retained. One Undo removes the generated transcript/captions;
 SRT export and normal project save/reopen use the existing caption tools.
 If the project is edited/replaced during recognition, the result is refused instead
 of overwriting that work; run Generate again. Native inputs are capped at one hour
-per source file. Reverse/held clips and the upstream subclip/nested-audio limitations
+per selected audio span. Reverse/held clips and nested-audio limitations
 remain outside this first implementation. Accuracy depends on the audio and model;
 the text stays editable. `transcript.generate` remains the upstream synchronous
 command; use the new button/`captions.autoGenerate` for background generation.

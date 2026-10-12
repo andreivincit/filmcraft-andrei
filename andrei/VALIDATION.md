@@ -96,3 +96,22 @@ The Romanian Program screenshot was visually inspected. Proof files are under
 The multilingual whisper-base model's four catalogue files were size/SHA256 verified
 at the pinned source revision and installed in the separate local data directory.
 Models and recordings are not bundled or published in the source repository.
+
+## Selected-audio captions and visible feedback
+
+Updated on 2026-10-12 after the owner reported an apparently inactive Generate button.
+The language popup now explicitly closes after a choice; Generate uses an ordinary
+egui button and shows persistent progress/error text immediately underneath.
+Recognition reads selected audible timeline clips/linked audio, or In/Out with no
+selection, rather than decoding every source file in full. Existing transcript words
+outside decoded spans are preserved.
+
+Engine/UI library Clippy passed; one final desktop/CLI build completed in 3m25s.
+No test suite was run, at the owner's request to avoid repeated tests. A native
+operation on a separate copy of the user's project generated three captions for
+the selected approximately 19-second `ai use.mp4` audio clip in about 3 seconds.
+Automatic detection chose English. The first script assertion expected Romanian,
+but inspection showed the scripted menu interaction had retained Auto-detect;
+the follow-up captured the actual chosen language and successful output.
+The original project/media were untouched. Local evidence and the inspected screenshot
+are in `verification/captions-native/selected-fix.*`, outside Git.

@@ -57,7 +57,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     match app.ui.text_tab.as_str() {
         "Captions" => {
             auto_controls(app, ui, body);
-            captions(app, ui, Rect::from_min_max(body.min + vec2(0.0, 34.0), body.max));
+            captions(app, ui, Rect::from_min_max(body.min + vec2(0.0, 56.0), body.max));
         }
         "Transcript" => transcript(app, ui, body),
         _ => crate::dock::placeholder(ui, body, &t, tl!("Graphics text search arrives with M10.1–M10.2")),
@@ -77,27 +77,43 @@ fn auto_controls(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             app.auto.add(&format!("text.captions.auto.language.{id}"), r.rect, label);
             if r.clicked() {
                 app.ui.caption_language = id.into();
+                ui.close();
             }
         }
     });
     let button = Rect::from_min_size(picker.right_top() + vec2(8.0, 0.0), vec2(160.0, 24.0));
     let enabled = app.session.active_sequence().is_some() && filmcraft_speech_available(app) && app.session.caption_jobs.is_empty();
-    let r = ui.interact(button, egui::Id::new("text.captions.auto.generate"), if enabled { Sense::click() } else { Sense::hover() });
-    ui.painter().rect_filled(button, 4.0, if enabled { t.accent } else { t.field_bg });
-    ui.painter().text(
-        button.center(),
-        Align2::CENTER_CENTER,
-        if app.session.caption_jobs.is_empty() { "Generate auto captions" } else { "Generating…" },
-        Tokens::ui(12.0),
-        if enabled { Color32::WHITE } else { t.text_dim },
+    let r = ui.put(
+        button,
+        egui::Button::new(if app.session.caption_jobs.is_empty() { "Generate auto captions" } else { "Generating…" })
+            .sense(if enabled { Sense::click() } else { Sense::hover() })
+            .fill(if enabled { t.accent } else { t.field_bg }),
     );
     app.auto.add("text.captions.auto.generate", button, "Generate auto captions");
     if enabled && r.clicked() {
         match app.session.execute("captions.autoGenerate", json!({"language":app.ui.caption_language})) {
-            Ok(_) => app.stop(),
-            Err(e) => app.ui.status = e.to_string(),
+            Ok(v) => {
+                app.ui.caption_job = v["job"].as_u64();
+                app.stop();
+                app.ui.caption_status = "Generating selected audio…".into();
+            }
+            Err(e) => {
+                app.ui.caption_job = None;
+                app.ui.caption_status = e.to_string();
+                app.ui.status = e.to_string();
+            }
         }
     }
+    if let Some(job) = app.session.jobs.iter().rev().find(|j| Some(j.id) == app.ui.caption_job) {
+        if !job.progress.finished.load(std::sync::atomic::Ordering::Acquire) {
+            app.ui.caption_status = job.progress.status.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        } else if let Some(error) = job.progress.error.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            app.ui.caption_status = error.clone();
+        } else {
+            app.ui.caption_status = "Auto captions generated".into();
+        }
+    }
+    ui.painter().text(rect.min + vec2(10.0, 34.0), Align2::LEFT_TOP, &app.ui.caption_status, Tokens::ui(11.0), t.text_dim);
 }
 
 fn tool_button(app: &mut FilmcraftApp, ui: &mut egui::Ui, r: Rect, icon: Icon, id: &str, label: &str, enabled: bool) -> bool {

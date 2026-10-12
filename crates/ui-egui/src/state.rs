@@ -481,6 +481,10 @@ pub struct UiState {
     #[serde(default)]
     pub caption_search: String,
     pub caption_language: String,
+    #[serde(default)]
+    pub caption_status: String,
+    #[serde(default)]
+    pub caption_job: Option<u64>,
     /// Text panel ▸ Transcript: selected words of the sequence transcript (anchor, end; indices as
     /// `transcript.inspect` lists them).
     #[serde(default)]
@@ -972,6 +976,8 @@ impl Default for UiState {
             text_tab: captions_tab(),
             caption_search: String::new(),
             caption_language: "auto".into(),
+            caption_status: String::new(),
+            caption_job: None,
             transcript_sel: None,
             transcript_search: String::new(),
             play_after_render: true,
