@@ -1,7 +1,7 @@
 # FilmCraft Andrei
 
-Personal macOS build based on FilmCraft 0.6.0, upstream commit
-`2ff3f5e266838700c292a35aaf762e3d4dcef980`. This branch changes identification and local
+Personal macOS build based on FilmCraft 0.7.2, upstream commit
+`71438c627b5cbcfb550526c3971f4d0037733c5c`. This branch changes identification and local
 packaging, plus the personal features documented below.
 
 ## Preview transforms
@@ -169,20 +169,21 @@ Screenshot and exported frame proof: `../verification/text-glow-native/`.
 
 ## Export of rotated phone footage
 
-Export no longer schedules parallel plane-rotation work while a container source
-holds its GOP cache mutex. Nested Rayon work could otherwise wait behind other
-render jobs trying to acquire that same source, freezing export at varying
-percentages with either CPU or GPU rendering. Frame rendering remains parallel;
-display rotation, pixel data and project serialization are unchanged.
+The 0.7.2 integration uses the official isolated decode pool fix for rotated
+phone footage and other decoding operations that start Rayon work under a GOP
+cache mutex. It replaces our earlier narrow serial-rotation workaround.
+Hardware encoding and GPU rendering remain opt-in export settings.
 
-The contention regression reproduced the old deadlock and passes with the fix.
-All 13 frame tests and 17 GOP-cache tests passed, with formatting and Clippy for
-both crates. A disposable native session exported an unchanged real-project copy
-at 1080×1920/30 fps: all 652 frames (21.733 seconds) plus AAC audio in 32.6 seconds
-with hardware encoding and GPU rendering. A three-second software/CPU export
-also finished. Both files decoded completely with the external ffprobe oracle;
-two exported frames were visually checked. Local evidence stays outside Git in
-`../verification/export-deadlock-native/`. Restart FilmCraft Andrei to load the fix.
+## Integration with 0.7.2
+
+All personal features above remain enabled. Ordinary Selection clicks retain
+our direct media move/proportional resize controls, Option duplication and
+Shift group translation. Explicit Motion/Transform selection (or double-click
+on media) uses the official eight-handle, rotation and anchor controls, with a
+single gesture owner. Graphic text layers retain their own text handles.
+The blue editable-text generation button also works in the official compact
+transport's overflow menu. Background caption polling retains the official
+export job diagnostics. Model, preferences and projects stay at existing paths.
 
 ## Build
 
@@ -205,7 +206,7 @@ for the many test executables. Product builds retain the upstream thin-LTO profi
 ## Updates
 
 `upstream` points at `https://github.com/storytold/filmcraft.git` and `origin` at this fork.
-The `andrei` branch starts at the installed 0.6.0 release; `main` tracks the upstream baseline.
+The `andrei` branch includes the official 0.7.2 release; `main` tracks the upstream baseline.
 Choose an upstream release, run `bash andrei/update.sh vX.Y.Z`, review/resolve the merge,
 run checks, commit, rebuild and smoke-test before pushing. A conflict stops the merge;
 personal commits are never reset or overwritten. Launcher updates do not update this build.

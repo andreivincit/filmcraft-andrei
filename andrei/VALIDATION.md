@@ -1,5 +1,32 @@
 # Local baseline verification
 
+## FilmCraft 0.7.2 integration
+
+Verified on 2026-10-13 after integrating official v0.7.2. Formatting and workspace
+Clippy passed. The complete workspace test coverage passed: 3,280 tests, zero final
+failures, 44 ignored across 294 programs. The initial full run found integration
+failures in UI expectations/localization; after fixes, affected and remaining
+targets were resumed without repeating already-passing core suites. Dependency
+layers, attribution of 61 assets and WebAssembly checking of 49 crates passed.
+Optional features outside the standard test configuration remain excluded.
+
+One final desktop/CLI release build with Whisper completed in 4m55s. A disposable
+native session opened a saved copy of the owner's actual 21.733-second project,
+saved/reopened it without changing clips/settings/markers and exported all 652
+frames in 9.57 seconds with H.264 hardware encoding and GPU rendering enabled.
+ffprobe verified 1080×1920/30 fps and AAC stereo; ffmpeg decoded the complete
+output without errors. Two extracted frames were visually inspected.
+
+The native personal desktop expanded a one-track sequence to ten tracks of each
+kind. The blue Program text button generated editable Graphic text locally from
+Romanian audio, with one Undo/Redo and no new subtitle track. Wording, font, size
+and glow survived save/reopen; the Program screenshot was visually inspected.
+Gesture regressions cover personal Selection controls and exclusive ownership by
+the official Motion controls. The original project copy remained byte-identical.
+Proof files are in `../verification/update-0.7.2/`, outside the public repository.
+These measured results cover this project and short synthetic recognition, not
+all media formats or long transcriptions.
+
 Verified on Apple silicon macOS on 2026-10-11, based on upstream FilmCraft
 0.6.0 (`2ff3f5e266838700c292a35aaf762e3d4dcef980`). Rust 1.99.0;
 craft-fonts `3d9ab3a132ed0eff457e424226a435a901da30d3`.

@@ -18,7 +18,7 @@ impl Driver {
         let mut session = Session::default();
         session.execute("file.openDemoProject", json!({})).unwrap();
         let (tx, rx) = channel();
-        let app = FilmcraftApp::new(session).with_control(rx);
+        let app = FilmcraftApp::new(session).with_personal_tracks().with_control(rx);
         let harness = Harness::builder().with_size(egui::vec2(1600.0, 980.0)).with_max_steps(10000).build_eframe(move |_| app);
         let mut d = Self { harness, tx };
         d.frames(5);

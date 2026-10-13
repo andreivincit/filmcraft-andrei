@@ -213,6 +213,10 @@ pub(crate) fn monitor_overlay(
         ui.data_mut(|d| d.remove::<Drag>(id));
         return false;
     }
+    if super::transform_handles::owns_media(app, pic, frame) && !ui.input(|i| i.modifiers.alt) {
+        ui.data_mut(|d| d.remove::<Drag>(id));
+        return false;
+    }
     let views = views(app, pic, frame);
     let selected = views.iter().find(|v| app.session.state.selection.contains(&v.clip));
     let painter = ui.painter().with_clip_rect(ui.clip_rect());

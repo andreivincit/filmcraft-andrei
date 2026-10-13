@@ -1,5 +1,20 @@
 # Personal changes
 
+## 2026-10-13 — FilmCraft 0.7.2 integration
+
+Merge official v0.7.2 (`71438c627b5cbcfb550526c3971f4d0037733c5c`) into
+the personal branch, preserving automatic captions/editable text, typography and
+glow, Option duplication, Shift preview groups and the desktop's ten-track policy.
+Use the official isolated decode pool instead of the earlier serial-rotation
+workaround. Ordinary Selection keeps the personal media controls; explicit
+Motion/Transform editing uses official rotation/anchor/eight-handle controls.
+Retain the blue text button in the compact transport and its overflow menu,
+personal background polling and official export diagnostics. Generic UI clients
+keep their explicit track counts; the native personal desktop opts into ten tracks.
+
+Full quality gates and native project/export/text probes passed; see
+[verification](VALIDATION.md#filmcraft-072-integration).
+
 ## 2026-10-12 — normal macOS launch can read speech models
 
 The installed Finder-launched app reported `config.json: Operation not permitted`
