@@ -160,3 +160,17 @@ positioning and the actual panel Glow checkbox across all 1,109 titles.
 Wording and timing were unchanged, the screenshot was visually inspected, and
 the original project's SHA-256 stayed identical. Local evidence is under
 `../verification/bulk-text-fix/`; no old source or project backup was restored.
+
+
+## Program review speed — 2026-10-13
+
+- Affected UI crate release Clippy passed; formatting passed.
+- Three targeted `review_speed_ui` tests passed: accepted/rejected rates,
+  Pause/Play retention, no project/history changes, live clock at 2.5× and 0.5×,
+  dropdown geometry in normal and maximized Program.
+- One release desktop/CLI build with Whisper completed.
+- One native disposable demo session verified all six rates, accelerated
+  playback, maximized dropdown choices, and changing its selection by click.
+  Normal and maximized screenshots were visually inspected.
+- No full workspace CI or new export run: timeline data/rendering are unchanged.
+- Evidence stays local under `verification/review-speed-*`.

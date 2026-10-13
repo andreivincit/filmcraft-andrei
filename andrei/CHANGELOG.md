@@ -1,5 +1,13 @@
 # Personal changes
 
+## 2026-10-13 — Program review playback speed
+
+Add a speed dropdown immediately before Program playback resolution, also in the
+maximized monitor: 0.5×, 1×, 1.5×, 2×, 2.5× and 3×. The selected review rate survives
+Pause/Play during the session and can change while playing. Reuse the existing
+shuttle audio/clock path; no clip speed, timing, project data or export changes.
+Agent command: `playback.setReviewSpeed {speed:number}`.
+
 ## 2026-10-13 — native macOS launcher
 
 Replace the Bash application entry point with a signed native launcher which
