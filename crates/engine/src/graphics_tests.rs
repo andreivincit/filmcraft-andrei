@@ -72,6 +72,66 @@ fn timeline_text_selection_synchronizes_style_and_box_with_atomic_undo() {
 }
 
 #[test]
+fn timeline_bulk_text_edit_and_move_support_more_than_1024_titles() {
+    let mut s = Session::default();
+    s.execute("file.newSequence", json!({"width":1280,"height":720,"fps":24,"video":1,"audio":1})).unwrap();
+    let a = ClipId(s.execute("graphics.newText", json!({"text":"Original wording","time":0,"track":0,"seconds":1})).unwrap()["clip"].as_u64().unwrap());
+    // Build a large sequence directly, without creating thousands of unrelated undo steps.
+    let mut ids = vec![a];
+    let mut template = s.active_sequence().unwrap().find_item(a).unwrap().1.clone();
+    template.effects.iter_mut().find(|e| e.effect == "graphic_text").unwrap().params.get_mut("text").unwrap().value =
+        filmcraft_project::ParamValue::Text("Follower wording".into());
+    let seq = s.state.active_sequence.unwrap();
+    let project = std::sync::Arc::make_mut(&mut s.project);
+    for n in 1..1109 {
+        let mut item = template.clone();
+        item.id = ClipId(project.alloc_id());
+        item.start = Tick::from_seconds_f64(f64::from(n) * 2.0);
+        ids.push(item.id);
+        project.sequence_mut(seq).unwrap().video_tracks[0].items.push(item);
+    }
+    s.execute("timeline.select", json!({"clips":ids.iter().map(|c| c.0).collect::<Vec<_>>()})).unwrap();
+    s.set_playhead(Tick::ZERO);
+    let before = s.project.clone();
+    let undo = s.history.undo.len();
+    s.execute(
+        "graphics.set",
+        json!({"clip":a.0,"props":{"font":"Inter","font_style":"Bold","size":104,"glow":true,"glow_range":35,"box_width":886,"box_height":420}}),
+    )
+    .unwrap();
+    for id in &ids {
+        let spec = &layers(&s, *id)[0];
+        let LayerContent::Text(t) = &spec.content else { panic!("text expected") };
+        assert_eq!((t.font.as_str(), t.style.as_str(), t.size, t.box_width, t.box_height), ("Inter", "Bold", 104.0, 886.0, 420.0));
+        assert_eq!(spec.appearance.glow.as_ref().unwrap().range, 35.0);
+        assert_eq!(t.text, if *id == a { "Original wording" } else { "Follower wording" });
+    }
+    assert_eq!(s.history.undo.len(), undo + 1);
+    let styled = s.project.clone();
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(s.project, before);
+    s.execute("edit.redo", json!({})).unwrap();
+    assert_eq!(s.project, styled);
+
+    for (n, pos) in [[200, 350], [220, 370]].into_iter().enumerate() {
+        s.execute("preview.move", json!({"clip":a.0,"layer":0,"position":pos,"texts":ids.iter().map(|c| c.0).collect::<Vec<_>>(),"merge":true,"begin":n==0}))
+            .unwrap();
+    }
+    for id in &ids {
+        assert_eq!(layers(&s, *id)[0].transform.position, filmcraft_geom::Vec2::new(220.0, 370.0));
+    }
+    assert_eq!(s.history.undo.len(), undo + 2);
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(s.project, styled);
+    let moved = s.project.clone();
+    let oversized = vec![a.0; crate::graphics::MAX_TIMELINE_TEXT_CLIPS + 1];
+    assert!(s.execute("preview.move", json!({"clip":a.0,"layer":0,"position":[0,0],"texts":oversized})).is_err());
+    s.state.selection = oversized.iter().copied().map(ClipId).collect();
+    assert!(s.execute("graphics.set", json!({"clip":a.0,"props":{"size":50}})).is_err());
+    assert_eq!(s.project, moved, "oversized input must not partially edit titles");
+}
+
+#[test]
 fn graphic_duration_does_not_set_its_timeline_position() {
     for command in ["graphics.newText", "graphics.newShape"] {
         for playhead_frame in [0, 72] {

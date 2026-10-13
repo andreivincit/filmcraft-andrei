@@ -138,6 +138,9 @@ clicking or double-clicking that title. The panels' font family/style/size chang
 corner drags and paragraph box drags also reach titles at other times. Each edit is
 one Undo; locked/disabled follower tracks are skipped and wording/timing stay local.
 These controls apply to existing and automatically generated Graphic clips.
+Timeline bulk edits and synchronized Program moves support up to 10,000 selected
+clips. This is independent of the 1,024-element limit for simultaneous Shift-selected
+preview groups; an extended speech sequence can contain more than 1,024 text clips.
 Automation retains `graphics.set` and `program.layer.<clip>.<layer>.handle.<0..7>`;
 corners are 0–3, middle sides 4–7 (right 5, left 7).
 Verified with 21 graphics-engine and 17 focused UI tests, formatting/Clippy, one

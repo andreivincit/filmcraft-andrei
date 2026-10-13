@@ -142,3 +142,21 @@ but inspection showed the scripted menu interaction had retained Auto-detect;
 the follow-up captured the actual chosen language and successful output.
 The original project/media were untouched. Local evidence and the inspected screenshot
 are in `verification/captions-native/selected-fix.*`, outside Git.
+
+## Bulk text sequences beyond 1,024 clips
+
+Fixed on 2026-10-13 after the owner's sequence of 1,109 titles hit the old
+`graphics.set` and `preview.move` limits. Both timeline operations now share a
+10,000-selected-clip bound, separate from simultaneous preview-group limits.
+Formatting and engine library Clippy passed. All 22 graphics tests and four
+preview tests passed, including a new 1,109-title regression for typography,
+Glow, geometry, preserved wording, atomic Undo/Redo and oversized-input refusal.
+No full workspace suite was run.
+
+One final desktop/CLI build completed in 4m48s. A 15-second native probe on a
+separate copy of the owner's project verified Program selection retention,
+font/style/bold, corner resizing, one-step Undo/Redo, synchronized Program
+positioning and the actual panel Glow checkbox across all 1,109 titles.
+Wording and timing were unchanged, the screenshot was visually inspected, and
+the original project's SHA-256 stayed identical. Local evidence is under
+`../verification/bulk-text-fix/`; no old source or project backup was restored.

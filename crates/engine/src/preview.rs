@@ -167,7 +167,10 @@ pub fn move_clip(s: &mut Session, p: &Value) -> Result<Value> {
         let mt = original.source_time_at(time.clamp(original.start, (original.end() - Tick(1)).max(original.start)));
         let frame_position = filmcraft_render::motion_matrix(q, original, size, None, mt).apply(position);
         if let Some(v) = p.get("texts") {
-            let ids = v.as_array().filter(|a| a.len() <= 1024).ok_or_else(|| bad("texts must be at most 1024 clip ids"))?;
+            let ids = v
+                .as_array()
+                .filter(|a| a.len() <= crate::graphics::MAX_TIMELINE_TEXT_CLIPS)
+                .ok_or_else(|| commands::bad("preview.move", format!("texts must be at most {} clip ids", crate::graphics::MAX_TIMELINE_TEXT_CLIPS)))?;
             for id in ids {
                 let id = ClipId(id.as_u64().ok_or_else(|| bad("invalid text clip id"))?);
                 if id == clip || targets.iter().any(|(c, _, _)| *c == id) {

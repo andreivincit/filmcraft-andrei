@@ -21,6 +21,10 @@ use crate::{EngineError, Result, Session};
 type Run = fn(&mut Session, &Value) -> Result<Value>;
 type Enabled = fn(&Session) -> std::result::Result<(), String>;
 
+// Timeline titles often contain thousands of short speech fragments. This bound is
+// separate from the smaller limit for simultaneously visible preview elements.
+pub(crate) const MAX_TIMELINE_TEXT_CLIPS: usize = 10_000;
+
 fn spec(
     id: &'static str,
     label: &'static str,
@@ -297,8 +301,8 @@ fn set_selected_text_props(s: &mut Session, clip: ClipId, eidx: usize, props: &s
         props.iter().filter(|(k, _)| !["text", "name", "enabled"].contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect();
     let mut targets = Vec::new();
     if bulk && !shared.is_empty() {
-        if s.state.selection.len() > 1024 {
-            return Err(bad("graphics.set", "at most 1024 selected text clips"));
+        if s.state.selection.len() > MAX_TIMELINE_TEXT_CLIPS {
+            return Err(bad("graphics.set", format!("at most {MAX_TIMELINE_TEXT_CLIPS} selected clips")));
         }
         for id in &s.state.selection {
             if *id == clip {
