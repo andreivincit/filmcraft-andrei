@@ -413,3 +413,13 @@ frame-size ratio. Intrinsic effects (Motion, Opacity…) replace the clip's own 
 effects are added. Applying is one undo step; saving, renaming, deleting and importing change the
 library, not the project, and are not undoable. Files with another `format`, a newer `version` or
 unknown effect ids are refused.
+
+The personal build writes version 2 when a preset carries local LUTs. Each preset's optional
+`luts` array embeds the `ProjectLut` entries used by its Lumetri Input/Look LUT parameters,
+including keyframed references. Applying imports these entries by content and remaps their
+ids to the destination project in the same Undo step as the effects. A colliding id cannot
+select an unrelated LUT. Import validates the embedded tables before changing the library;
+a legacy preset with a missing LUT reports an error instead of silently omitting its look.
+Presets without embedded LUTs retain version 1. Older builds reject version 2; use the updated
+personal application for these files. Embedded user LUTs remain local user assets and are
+never included in the application's source or package.

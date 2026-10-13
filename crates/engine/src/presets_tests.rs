@@ -257,3 +257,88 @@ fn export_and_import_go_through_host_services() {
     assert_eq!(s2.presets.user.len(), 1);
     assert!(s2.execute("presets.import", json!({"path": "/exports/missing.prfpset"})).is_err());
 }
+
+#[test]
+fn portable_lut_presets_remap_collisions_reuse_content_and_undo_atomically() {
+    let fs = Arc::new(MemFs::default());
+    let mut source = Session::new(fs.clone());
+    source.execute("file.openDemoProject", json!({})).unwrap();
+    let clip = source.active_sequence().unwrap().video_tracks[0].items[0].id;
+    let text = filmcraft_color::Lut::from_cube(filmcraft_color::Lut3d::from_fn(2, |c| [c[2], c[1], c[0]])).to_cube();
+    Arc::make_mut(&mut source.project).luts.push(filmcraft_project::ProjectLut {
+        id: "collision".into(),
+        name: "Local colour".into(),
+        source_path: None,
+        format: "cube".into(),
+        text: text.clone().into(),
+    });
+    source.execute("lumetri.setLook", json!({"clip": clip.0, "lut": "lib:collision"})).unwrap();
+    source.execute("presets.save", json!({"clip": clip.0, "name": "Portable", "keyframes": "none"})).unwrap();
+    source.execute("presets.export", json!({"path": "portable.json"})).unwrap();
+    let file: serde_json::Value = serde_json::from_slice(&fs.read_file("portable.json").unwrap()).unwrap();
+    assert_eq!(file["version"], 2);
+    assert_eq!(file["presets"][0]["luts"][0]["text"], text);
+
+    let mut target = Session::new(fs.clone());
+    target.execute("file.openDemoProject", json!({})).unwrap();
+    let clip = target.active_sequence().unwrap().video_tracks[0].items[0].id;
+    let other = filmcraft_color::Lut::from_cube(filmcraft_color::Lut3d::from_fn(2, |c| c)).to_cube();
+    Arc::make_mut(&mut target.project).luts.push(filmcraft_project::ProjectLut {
+        id: "collision".into(),
+        name: "Different colour".into(),
+        source_path: None,
+        format: "cube".into(),
+        text: other.into(),
+    });
+    target.execute("presets.import", json!({"path": "portable.json"})).unwrap();
+    let before = target.project.clone();
+    assert!(target.execute("presets.apply", json!({"preset": "Portable", "clips": [u64::MAX]})).is_err());
+    assert_eq!(target.project.luts, before.luts, "failed apply rolls back embedded LUT import");
+    target.execute("presets.apply", json!({"preset": "Portable", "clips": [clip.0]})).unwrap();
+    assert_eq!(target.project.luts.len(), 2);
+    let fx = item(&target, clip).effect("lumetri").unwrap().clone();
+    let ParamValue::Text(reference) = &fx.param("look_lut").unwrap().value else { panic!("not a LUT") };
+    assert_ne!(reference, "lib:collision");
+    let lut = filmcraft_render::luts::resolve(Some(&target.project), reference).unwrap();
+    assert_eq!(lut.apply([1.0, 0.0, 0.0]), [0.0, 0.0, 1.0]);
+    target.execute("presets.apply", json!({"preset": "Portable", "clips": [clip.0]})).unwrap();
+    assert_eq!(target.project.luts.len(), 2, "identical LUT is reused");
+    target.undo();
+    target.undo();
+    assert_eq!(target.project.luts, before.luts);
+    assert_eq!(item(&target, clip).effects, before.sequence(target.state.active_sequence.unwrap()).unwrap().find_item(clip).unwrap().1.effects);
+    target.redo();
+    assert_eq!(target.project.luts.len(), 2);
+    target.execute("file.saveAs", json!({"path": "portable.fcproj"})).unwrap();
+    let mut reopened = Session::new(fs);
+    reopened.execute("file.open", json!({"path": "portable.fcproj"})).unwrap();
+    assert_eq!(reopened.project.luts, target.project.luts);
+}
+
+#[test]
+fn malformed_embedded_lut_is_rejected_before_changing_library() {
+    let fs = Arc::new(MemFs::default());
+    let mut s = Session::new(fs.clone());
+    s.execute("presets.export", json!({"path": "bad.json", "names": ["Fade In"]})).unwrap();
+    let mut file: serde_json::Value = serde_json::from_slice(&fs.read_file("bad.json").unwrap()).unwrap();
+    file["version"] = json!(2);
+    file["presets"][0]["luts"] = json!([{"id":"bad", "name":"Bad", "format":"cube", "text":"LUT_3D_SIZE 64\n0 0 0"}]);
+    fs.write_file("bad.json", &serde_json::to_vec(&file).unwrap()).unwrap();
+    assert!(s.execute("presets.import", json!({"path": "bad.json"})).is_err());
+    assert!(s.presets.user.is_empty());
+}
+
+#[test]
+fn legacy_missing_lut_leaves_project_unchanged() {
+    let (mut s, clips) = demo();
+    let mut p = crate::presets::builtin_presets().remove(0);
+    p.name = "Missing".into();
+    let mut fx = filmcraft_project::find_effect("lumetri").unwrap().instance();
+    fx.param_mut("look_lut").unwrap().value = ParamValue::Text("lib:missing".into());
+    p.effects = vec![fx];
+    s.presets.user.push(p);
+    let before = s.project.clone();
+    assert!(s.execute("presets.apply", json!({"preset":"Missing", "clips":[clips[0].0]})).is_err());
+    assert_eq!(s.project.luts, before.luts);
+    assert_eq!(item(&s, clips[0]).effects, before.sequence(s.state.active_sequence.unwrap()).unwrap().find_item(clips[0]).unwrap().1.effects);
+}

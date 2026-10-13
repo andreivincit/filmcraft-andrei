@@ -228,3 +228,21 @@ The launcher uses the personal Application Support directory; `FILMCRAFT_DATA_DI
 can explicitly override it for a disposable agent session.
 Keep the app inside this workspace for the build/update scripts.
 Use a Finder alias or a Dock shortcut if you want easier access; do not move the bundle alone.
+
+## Portable colour presets
+
+The personal build saves the local LUT tables used by a Lumetri effect inside its
+user preset. Import a version-2 preset through **Effects → Presets → right-click
+an existing preset → Import Presets…**, then drag it onto a clip or adjustment
+layer (or double-click with the target selected). The LUT is added to the target
+project automatically; applying is one Undo step and repeated use reuses identical
+tables. Exported presets carry the tables to another project or machine without
+requiring the original LUT paths. Version-1 presets remain readable; older builds
+cannot open version-2 preset files.
+
+The owner's Old Money files and derived preset stay outside `source/` in the
+workspace's `Andrei Presets/Old Money/`. They are local user materials and are not
+published or bundled. The combined LUT chooses the Skin table for skin-like input
+colours, the Background table for other colours, and blends smoothly between
+these ranges. This is a colour heuristic, not face/skin segmentation; warm objects
+can receive the same treatment. Initial Creative Intensity is 70%.

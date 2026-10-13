@@ -20,7 +20,7 @@
 use std::path::{Path, PathBuf};
 
 use filmcraft_geom::{Affine, Vec2};
-use filmcraft_project::{ClipId, EffectInstance, Keyframe, Mask, MaskPath, Param, ParamValue, TrackItem, TrackKind};
+use filmcraft_project::{ClipId, EffectInstance, Keyframe, Mask, MaskPath, Param, ParamValue, ProjectLut, TrackItem, TrackKind};
 use filmcraft_time::{TICKS_PER_SECOND, Tick};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -72,6 +72,9 @@ pub struct EffectPreset {
     #[serde(default = "hd")]
     pub source_size: (u32, u32),
     pub effects: Vec<EffectInstance>,
+    /// Local LUT dependencies carried with the preset for use in another project.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub luts: Vec<ProjectLut>,
     /// Built-in (not saved, cannot be deleted).
     #[serde(skip)]
     pub builtin: bool,
@@ -125,7 +128,8 @@ impl PresetLibrary {
 }
 
 fn file_bytes(presets: &[EffectPreset]) -> Vec<u8> {
-    let f = PresetFile { format: FILE_FORMAT.into(), version: 1, presets: presets.to_vec() };
+    let version = if presets.iter().any(|p| !p.luts.is_empty()) { 2 } else { 1 };
+    let f = PresetFile { format: FILE_FORMAT.into(), version, presets: presets.to_vec() };
     serde_json::to_vec_pretty(&f).unwrap_or_default()
 }
 
@@ -134,12 +138,23 @@ fn parse_file(bytes: &[u8]) -> std::result::Result<Vec<EffectPreset>, String> {
     if f.format != FILE_FORMAT {
         return Err(format!("not an effect preset file (format `{}`)", f.format));
     }
-    if f.version > 1 {
-        return Err(format!("preset file version {} is newer than this build reads (1)", f.version));
+    if f.version > 2 {
+        return Err(format!("preset file version {} is newer than this build reads (2)", f.version));
     }
     for p in &f.presets {
         if p.effects.iter().any(|e| e.def().is_none()) {
             return Err(format!("preset `{}` uses an effect this build doesn't have", p.name));
+        }
+        if p.luts.len() > 64 {
+            return Err(format!("preset `{}` has too many LUTs", p.name));
+        }
+        let mut ids = std::collections::HashSet::new();
+        for lut in &p.luts {
+            if lut.id.is_empty() || !ids.insert(&lut.id) {
+                return Err(format!("preset `{}` has an empty or duplicate LUT id", p.name));
+            }
+            let fmt = filmcraft_color::LutFormat::from_path(&format!("x.{}", lut.format)).ok_or_else(|| format!("unsupported LUT format `{}`", lut.format))?;
+            filmcraft_color::Lut::parse(&lut.text, Some(fmt)).map_err(|e| format!("preset `{}` LUT `{}`: {e}", p.name, lut.name))?;
         }
     }
     Ok(f.presets)
@@ -190,6 +205,7 @@ fn preset(name: &str, description: &str, keyframes: KeyframeMode, secs: f64, eff
         source_duration: Tick((secs * TICKS_PER_SECOND as f64) as i64),
         source_size: hd(),
         effects,
+        luts: Vec::new(),
         builtin: true,
     }
 }
@@ -278,6 +294,7 @@ pub fn capture(it: &TrackItem, idx: &[usize], name: &str, description: &str, mod
         source_duration: media_len(it),
         source_size: size,
         effects,
+        luts: Vec::new(),
         builtin: false,
     }
 }
@@ -474,7 +491,11 @@ fn save(s: &mut Session, p: &Value) -> Result<Value> {
     };
     let mt = it.source_time_at(s.playhead().clamp(it.start, it.end() - Tick(1)));
     let size = clip_size(s, it);
-    let preset = capture(it, &idx, &name, str_p(p, "description").unwrap_or(""), mode, mt, size);
+    let mut preset = capture(it, &idx, &name, str_p(p, "description").unwrap_or(""), mode, mt, size);
+    for id in lut_ids(&preset.effects) {
+        let lut = s.project.luts.iter().find(|l| l.id == id).ok_or_else(|| bad("presets.save", format!("missing LUT `{id}`; import it before saving")))?;
+        preset.luts.push(lut.clone());
+    }
     let out = preset_json(&preset);
     s.presets.user.retain(|x| x.name != name);
     s.presets.user.push(preset);
@@ -498,7 +519,38 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
         clips.iter().filter_map(|c| seq.find_item(*c).map(|(_, it)| (*c, clip_size(s, it)))).collect()
     };
     let label = format!("Apply Preset {}", preset.name);
-    let n = s.edit_sequence(&label, |q, _, _| {
+    let seq_id = s.state.active_sequence.ok_or(EngineError::NoSequence)?;
+    let n = s.edit(&label, |project, _| {
+        let mut preset = preset.clone();
+        let ids = lut_ids(&preset.effects);
+        let mut refs = std::collections::HashMap::new();
+        for id in ids {
+            let mapped = if let Some(lut) = preset.luts.iter().find(|l| l.id == id) {
+                if let Some(existing) = project.luts.iter().find(|l| l.text == lut.text && l.format == lut.format) {
+                    existing.id.clone()
+                } else {
+                    let mut lut = lut.clone();
+                    lut.id = format!("lut{}", project.alloc_id());
+                    let mapped = lut.id.clone();
+                    project.luts.push(lut);
+                    mapped
+                }
+            } else if project.luts.iter().any(|l| l.id == id) {
+                id.clone()
+            } else {
+                return Err(bad("presets.apply", format!("missing LUT `{id}`; import it in this project or re-save a portable preset")));
+            };
+            refs.insert(format!("lib:{id}"), format!("lib:{mapped}"));
+        }
+        for e in &mut preset.effects {
+            for p in lut_params_mut(e) {
+                p.map_values(|v| match v {
+                    ParamValue::Text(ref text) if refs.contains_key(text) => ParamValue::Text(refs.get(text).cloned().unwrap_or_else(|| text.clone())),
+                    other => other,
+                });
+            }
+        }
+        let q = project.sequence_mut(seq_id).ok_or(EngineError::NoSequence)?;
         let mut n = 0;
         for t in q.all_tracks_mut() {
             if (t.kind == TrackKind::Audio) != audio {
@@ -517,6 +569,28 @@ fn apply(s: &mut Session, p: &Value) -> Result<Value> {
         Ok(n)
     })?;
     Ok(json!({"applied": n}))
+}
+
+fn lut_params_mut(e: &mut EffectInstance) -> impl Iterator<Item = &mut Param> {
+    let lumetri = e.effect == "lumetri";
+    e.params.iter_mut().filter_map(move |(id, p)| (lumetri && matches!(id.as_str(), "input_lut" | "look_lut")).then_some(p))
+}
+
+fn lut_ids(effects: &[EffectInstance]) -> Vec<String> {
+    let mut ids = Vec::new();
+    for e in effects.iter().filter(|e| e.effect == "lumetri") {
+        for p in ["input_lut", "look_lut"].iter().filter_map(|id| e.param(id)) {
+            for v in std::iter::once(&p.value).chain(p.keyframes.iter().map(|k| &k.value)) {
+                if let ParamValue::Text(text) = v
+                    && let Some(id) = text.strip_prefix("lib:")
+                    && !ids.iter().any(|old| old == id)
+                {
+                    ids.push(id.to_string());
+                }
+            }
+        }
+    }
+    ids
 }
 
 fn delete(s: &mut Session, p: &Value) -> Result<Value> {
