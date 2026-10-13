@@ -1,5 +1,14 @@
 # Personal changes
 
+## 2026-10-13 — trim selected timeline layers together
+
+Dragging the In or Out edge of a selected clip with the Selection tool trims all
+selected clips, including other tracks, by the same time delta. Preview every
+unlocked target during the gesture, preserve selection, and commit one Undo step.
+The tightest source, neighbor or minimum-duration limit stops the whole group;
+locked tracks stay unchanged. Ripple, Roll and Rate Stretch retain their behavior.
+Agent callers can opt in with `timeline.trim {clip, edge, delta, selection:true}`.
+
 ## 2026-10-13 — Program review playback speed
 
 Add a speed dropdown immediately before Program playback resolution, also in the

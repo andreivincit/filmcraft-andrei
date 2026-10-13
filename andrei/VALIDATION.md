@@ -1,5 +1,20 @@
 # Local baseline verification
 
+## Selected timeline layer edge drags — 2026-10-13
+
+Formatting and warning-free Clippy passed for engine/UI. Targeted engine trim
+coverage: 19 passed, including common media limits, locked tracks, malformed
+selection, default command behavior and one-step Undo/Redo. Existing timeline
+gesture coverage: eight passed, two screenshot-only tests ignored. The new
+multitrack In/Out drag regression passed after settling its fit-view animation.
+
+One final desktop/CLI release build completed in 3m28s. A disposable native
+session verified all four selected-adjustment-layer gestures (In/Out, shorter/
+longer), equal deltas, selection preservation and single-step Undo. Its screenshot
+was visually inspected. The owner's open project was not touched. Proof files:
+`../verification/multi-trim-native/` and `multi-trim-build.log`. No full-workspace
+test run, project schema change or rendering/export change was required.
+
 ## FilmCraft 0.7.2 integration
 
 Verified on 2026-10-13 after integrating official v0.7.2. Formatting and workspace
