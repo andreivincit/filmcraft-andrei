@@ -167,6 +167,23 @@ crates, one final product build and a 12-second disposable native probe (checkbo
 bulk drag, Undo/Redo, persistence and identical reopened frame export).
 Screenshot and exported frame proof: `../verification/text-glow-native/`.
 
+## Export of rotated phone footage
+
+Export no longer schedules parallel plane-rotation work while a container source
+holds its GOP cache mutex. Nested Rayon work could otherwise wait behind other
+render jobs trying to acquire that same source, freezing export at varying
+percentages with either CPU or GPU rendering. Frame rendering remains parallel;
+display rotation, pixel data and project serialization are unchanged.
+
+The contention regression reproduced the old deadlock and passes with the fix.
+All 13 frame tests and 17 GOP-cache tests passed, with formatting and Clippy for
+both crates. A disposable native session exported an unchanged real-project copy
+at 1080×1920/30 fps: all 652 frames (21.733 seconds) plus AAC audio in 32.6 seconds
+with hardware encoding and GPU rendering. A three-second software/CPU export
+also finished. Both files decoded completely with the external ffprobe oracle;
+two exported frames were visually checked. Local evidence stays outside Git in
+`../verification/export-deadlock-native/`. Restart FilmCraft Andrei to load the fix.
+
 ## Build
 
 The local Rust toolchain is in `../.tools`; upstream fonts are in `../craft-fonts`.

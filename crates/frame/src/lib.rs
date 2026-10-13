@@ -672,7 +672,10 @@ fn rotate_plane<T: Copy + Default + Send + Sync>(src: &[T], w: usize, h: usize, 
     }
     // output width: h for a quarter / three-quarter turn
     let ow = if q % 2 == 1 { h } else { w };
-    out.par_chunks_mut(ow * n).enumerate().for_each(|(oy, row)| {
+    // Container sources call this while holding their GOP mutex. Do not schedule Rayon work:
+    // a waiting worker can pick up another render job that blocks on that same source, leaving
+    // the lock owner waiting forever for its rotation tasks. Export already parallelizes frames.
+    for (oy, row) in out.chunks_mut(ow * n).enumerate() {
         for ox in 0..ow {
             // the source pixel shown at (ox, oy)
             let (x, y) = match q {
@@ -683,7 +686,7 @@ fn rotate_plane<T: Copy + Default + Send + Sync>(src: &[T], w: usize, h: usize, 
             let s = (y * w + x) * n;
             row[ox * n..ox * n + n].copy_from_slice(&src[s..s + n]);
         }
-    });
+    }
     out
 }
 
@@ -769,6 +772,35 @@ mod tests {
         let c = short.cropped(Region { x: 2, y: 2, w: 2, h: 2 });
         let PixelData::Yuv8 { planes, .. } = &c.data else { panic!() };
         assert_eq!(*planes[0], [0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn rotation_completes_under_parallel_source_lock_contention() {
+        // GOP caches rotate decoded frames while holding the source mutex. Nested Rayon
+        // rotation tasks can strand its owner behind render jobs waiting for that mutex.
+        // The timeout lives outside the render pool, so a regression fails without hanging.
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().expect("render pool");
+            let source = std::sync::Mutex::new(VideoFrame::rgba8(1000, 501, vec![42; 1000 * 501 * 4]));
+            pool.install(|| {
+                rayon::scope(|scope| {
+                    for i in 0..128u8 {
+                        let source = &source;
+                        scope.spawn(move |_| {
+                            let rotation = i % 3 + 1;
+                            let f = source.lock().expect("source").rotated(rotation);
+                            let expected = if rotation % 2 == 1 { (501, 1000) } else { (1000, 501) };
+                            assert_eq!((f.width, f.height), expected);
+                            assert!(matches!(&f.data, PixelData::Rgba8(p) if p.iter().all(|&b| b == 42)));
+                        });
+                    }
+                });
+            });
+            tx.send(()).expect("test still waiting");
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(10)).expect("rotation under a shared source lock must complete without deadlock");
+        worker.join().expect("render worker");
     }
 
     #[test]
