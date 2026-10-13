@@ -1,6 +1,7 @@
 """Assemble a local macOS application, preserving the preceding verified build."""
 from pathlib import Path
 import plistlib
+import filecmp
 import shutil
 import subprocess
 import tempfile
@@ -30,13 +31,7 @@ with tempfile.TemporaryDirectory(prefix="package-", dir=applications) as tempora
     for license_file in (workspace / "craft-fonts/fonts").glob("*/OFL.txt"):
         shutil.copy2(license_file, resources / f"OFL-{license_file.parent.name}.txt")
     wrapper = executable / "FilmCraftAndrei"
-    wrapper.write_text('''#!/bin/bash
-set -euo pipefail
-bundle_bin="$(cd "$(dirname "$0")" && pwd)"
-export FILMCRAFT_DATA_DIR="${FILMCRAFT_DATA_DIR:-$HOME/Library/Application Support/FilmCraft Andrei}"
-exec "$bundle_bin/FilmCraftCore" "$@"
-''')
-    wrapper.chmod(0o755)
+    subprocess.run(["clang", "-O2", "-Wall", "-Wextra", "-Werror", str(source / "andrei/launcher.c"), "-o", str(wrapper)], check=True)
     info = {
         "CFBundleName": "FilmCraft Andrei",
         "CFBundleDisplayName": "FilmCraft Andrei",
@@ -64,14 +59,16 @@ exec "$bundle_bin/FilmCraftCore" "$@"
     previous = applications / "FilmCraft Andrei.previous.app"
     if previous.is_symlink():
         raise SystemExit(f"Refusing to replace a symlink at backup path: {previous}")
-    if previous.exists():
+    same_engine = app.exists() and filecmp.cmp(app / "Contents/MacOS/FilmCraftCore", executable / "FilmCraftCore", shallow=False)
+    rollback = Path(temporary) / "replaced.app" if same_engine else previous
+    if not same_engine and previous.exists():
         shutil.rmtree(previous)
     if app.exists():
-        app.rename(previous)
+        app.rename(rollback)
     try:
         staged.rename(app)
     except OSError:
-        if previous.exists() and not app.exists():
-            previous.rename(app)
+        if rollback.exists() and not app.exists():
+            rollback.rename(app)
         raise
 print(app)

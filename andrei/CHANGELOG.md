@@ -1,5 +1,12 @@
 # Personal changes
 
+## 2026-10-13 — native macOS launcher
+
+Replace the Bash application entry point with a signed native launcher which
+sets the same personal data path and waits for FilmCraftCore. macOS no longer
+identifies the main application's host as com.apple.bash. Preserve the preceding
+engine backup when only the launcher/packaging changes; no product recompilation.
+
 ## 2026-10-13 — FilmCraft 0.7.2 integration
 
 Merge official v0.7.2 (`71438c627b5cbcfb550526c3971f4d0037733c5c`) into
